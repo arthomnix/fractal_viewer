@@ -1,6 +1,6 @@
 [package]
 name = "fractal_viewer"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [lib]
@@ -11,22 +11,23 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 cfg-if = "1"
 
-winit = "0.26"
+winit = "0.27"
 env_logger = "0.9"
 log = "0.4"
-wgpu = "0.13"
-naga = "0.9"
+wgpu = "0.14"
+naga = "0.10"
 pollster = "0.2"
 bytemuck = { version = "1.12", features = [ "derive" ] }
-imgui-wgpu = "0.20"
-imgui = "0.8"
-imgui-winit-support = { version = "0.8", features = [ "winit-26" ], default-features = false }
+egui = "0.19"
+egui_wgpu_backend = "0.20"
+egui_winit_platform = "0.16"
+instant = "0.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1"
 console_log = "0.2"
-wgpu = { version = "0.13", features = [ "webgl" ] }
+wgpu = { version = "0.14", features = [ "webgl" ] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [ "Document", "Window", "Element" ] }
-imgui = { version = "0.8", features = [ "wasm" ] }
+getrandom = { version = "0.2.7", features = [ "js" ] }

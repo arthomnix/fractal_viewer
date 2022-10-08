@@ -2,6 +2,7 @@ struct Uniforms {
     scale: f32,
     centre: vec2<f32>,
     iterations: i32,
+    _pad_wasm: vec2<u32>,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
