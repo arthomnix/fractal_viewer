@@ -362,7 +362,7 @@ impl State {
                 ui.add(egui::Slider::new(&mut self.settings.zoom, 0.0..=100000.0).logarithmic(true));
                 ui.separator();
                 ui.label("Iterations");
-                ui.add(egui::Slider::new(&mut self.settings.iterations, 1..=10000));
+                ui.add(egui::Slider::new(&mut self.settings.iterations, 1..=10000).logarithmic(true));
                 ui.separator();
                 ui.label("Centre");
                 ui.add(egui::DragValue::new(&mut self.settings.centre[0]).speed(0.1 / settings_clone.zoom));
