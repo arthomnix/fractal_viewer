@@ -16,6 +16,15 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
+fn calculate_scale(size: &winit::dpi::PhysicalSize<u32>, settings: &UserSettings) -> f32 {
+    4.0 / settings.zoom
+        / (if size.width < size.height {
+        size.width
+    } else {
+        size.height
+    }) as f32
+}
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
@@ -27,65 +36,59 @@ struct Uniforms {
     initial_value: [f32; 2],
 }
 
+impl Uniforms {
+    fn new(size: &winit::dpi::PhysicalSize<u32>, settings: &UserSettings) -> Self {
+        let scale = calculate_scale(size, settings);
+        Uniforms {
+            scale,
+            centre: [
+                size.width as f32 / 2.0 * scale - settings.centre[0],
+                size.height as f32 / 2.0 * scale - settings.centre[1],
+            ],
+            iterations: settings.iterations,
+            julia_set: settings.julia_set as u32,
+            initial_value: settings.initial_value,
+            _pad: 0,
+        }
+    }
+}
+
 #[derive(Clone)]
 struct UserSettings {
-    zoom: f32,
-    centre: [f32; 2],
-    iterations: i32,
-    equation: String,
-    prev_equation: String,
-    equation_valid: bool,
-    julia_set: bool,
-    initial_value: [f32; 2],
+zoom: f32,
+centre: [f32; 2],
+iterations: i32,
+equation: String,
+prev_equation: String,
+equation_valid: bool,
+julia_set: bool,
+initial_value: [f32; 2],
 }
 
 struct InputState {
-    lmb_pressed: bool,
-    rmb_pressed: bool,
-    prev_cursor_pos: PhysicalPosition<f64>,
+lmb_pressed: bool,
+rmb_pressed: bool,
+prev_cursor_pos: PhysicalPosition<f64>,
 }
 
 struct State {
-    surface: wgpu::Surface,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
-    size: winit::dpi::PhysicalSize<u32>,
-    render_pipeline: wgpu::RenderPipeline,
-    uniform_buffer: wgpu::Buffer,
-    uniform_bind_group: wgpu::BindGroup,
-    uniform_bind_group_layout: wgpu::BindGroupLayout,
-    last_frame: Instant,
-    backend: &'static str,
-    settings: UserSettings,
-    input_state: InputState,
-    platform: Platform,
-    rpass: RenderPass,
+surface: wgpu::Surface,
+device: wgpu::Device,
+queue: wgpu::Queue,
+config: wgpu::SurfaceConfiguration,
+size: winit::dpi::PhysicalSize<u32>,
+render_pipeline: wgpu::RenderPipeline,
+uniform_buffer: wgpu::Buffer,
+uniform_bind_group: wgpu::BindGroup,
+uniform_bind_group_layout: wgpu::BindGroupLayout,
+last_frame: Instant,
+backend: &'static str,
+settings: UserSettings,
+input_state: InputState,
+platform: Platform,
+rpass: RenderPass,
 }
 
-fn calculate_scale(size: &winit::dpi::PhysicalSize<u32>, settings: &UserSettings) -> f32 {
-    4.0 / settings.zoom
-        / (if size.width < size.height {
-            size.width
-        } else {
-            size.height
-        }) as f32
-}
-
-fn calculate_uniforms(size: &winit::dpi::PhysicalSize<u32>, settings: &UserSettings) -> Uniforms {
-    let scale = calculate_scale(size, settings);
-    Uniforms {
-        scale,
-        centre: [
-            size.width as f32 / 2.0 * scale - settings.centre[0],
-            size.height as f32 / 2.0 * scale - settings.centre[1],
-        ],
-        iterations: settings.iterations,
-        julia_set: settings.julia_set as u32,
-        initial_value: settings.initial_value,
-        _pad: 0,
-    }
-}
 
 impl State {
     async fn new(window: &Window) -> Self {
@@ -158,7 +161,7 @@ impl State {
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Window Resolution Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[calculate_uniforms(&size, &settings)]),
+            contents: bytemuck::cast_slice(&[Uniforms::new(&size, &settings)]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -386,7 +389,7 @@ impl State {
         self.queue.write_buffer(
             &self.uniform_buffer,
             0,
-            bytemuck::cast_slice(&[calculate_uniforms(&self.size, &self.settings)]),
+            bytemuck::cast_slice(&[Uniforms::new(&self.size, &self.settings)]),
         );
         self.last_frame = Instant::now();
     }
