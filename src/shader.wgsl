@@ -2,7 +2,8 @@ struct Uniforms {
     scale: f32,
     centre: vec2<f32>,
     iterations: i32,
-    _pad_wasm: vec2<u32>,
+    julia_set: u32,
+    initial_value: vec2<f32>,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -80,14 +81,28 @@ fn hsv_rgb(hsv: vec3<f32>) -> vec3<f32> {
 fn get_fragment_colour(c: vec2<f32>, iterations: i32) -> vec4<f32> {
     var i: i32 = 0;
 
-    for (
-        var z: vec2<f32> = vec2<f32>(0.0, 0.0);
-        cabs_squared(z) < 4.0;
-        z = REPLACE_FRACTAL_EQN // gets replaced by user-defined expression
-    ) {
-        i++;
-        if (i == iterations) {
-            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    if (uniforms.julia_set < 1u) {
+        for (
+            var z: vec2<f32> = uniforms.initial_value;
+            cabs_squared(z) < 4.0;
+            z = REPLACE_FRACTAL_EQN // gets replaced by user-defined expression
+        ) {
+            i++;
+            if (i == iterations) {
+                return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+            }
+        }
+    } else {
+        var z: vec2<f32> = c;
+        var c: vec2<f32> = uniforms.initial_value;
+        for (;
+            cabs_squared(z) < 4.0;
+            z = REPLACE_FRACTAL_EQN // gets replaced by user-defined expression
+        ) {
+            i++;
+            if (i == iterations) {
+                return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+            }
         }
     }
 

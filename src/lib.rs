@@ -20,11 +20,11 @@ use egui_winit_platform::{Platform, PlatformDescriptor};
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
     scale: f32,
-    _pad_1: u32,
+    _pad: u32,
     centre: [f32; 2],
     iterations: i32,
-    _pad_2: u32,
-    _pad_wasm: u64,
+    julia_set: u32,
+    initial_value: [f32; 2],
 }
 
 #[derive(Clone)]
@@ -35,10 +35,13 @@ struct UserSettings {
     equation: String,
     prev_equation: String,
     equation_valid: bool,
+    julia_set: bool,
+    initial_value: [f32; 2],
 }
 
 struct InputState {
     lmb_pressed: bool,
+    rmb_pressed: bool,
     prev_cursor_pos: PhysicalPosition<f64>,
 }
 
@@ -68,11 +71,11 @@ fn calculate_uniforms(size: &winit::dpi::PhysicalSize<u32>, settings: &UserSetti
     let scale = calculate_scale(&size, &settings);
     Uniforms {
         scale,
-        _pad_1: 0,
         centre: [size.width as f32 / 2.0 * scale - settings.centre[0], size.height as f32 / 2.0 * scale - settings.centre[1]],
         iterations: settings.iterations,
-        _pad_2: 0,
-        _pad_wasm: 0,
+        julia_set: settings.julia_set as u32,
+        initial_value: settings.initial_value,
+        _pad: 0,
     }
 }
 
@@ -137,6 +140,8 @@ impl State {
             equation: "cpow(z, 2.0) + c".to_string(),
             prev_equation: "cpow(z, 2.0) + c".to_string(),
             equation_valid: true,
+            julia_set: false,
+            initial_value: [0.0, 0.0],
         };
 
         let uniform_buffer = device.create_buffer_init(
@@ -234,6 +239,7 @@ impl State {
             settings,
             input_state: InputState {
                 lmb_pressed: false,
+                rmb_pressed: false,
                 prev_cursor_pos: PhysicalPosition {
                     x: 0.0,
                     y: 0.0,
@@ -264,12 +270,19 @@ impl State {
                     ElementState::Pressed => self.input_state.lmb_pressed = true,
                     ElementState::Released => self.input_state.lmb_pressed = false
                 },
+                MouseButton::Right => match state {
+                    ElementState::Pressed => self.input_state.rmb_pressed = true,
+                    ElementState::Released => self.input_state.rmb_pressed = false,
+                }
                 _ => {}
             },
             WindowEvent::CursorMoved { position, .. } => {
                 if self.input_state.lmb_pressed {
                     self.settings.centre[0] -= (position.x - self.input_state.prev_cursor_pos.x) as f32 * calculate_scale(&self.size, &self.settings);
                     self.settings.centre[1] -= (position.y - self.input_state.prev_cursor_pos.y) as f32 * calculate_scale(&self.size, &self.settings);
+                } else if self.input_state.rmb_pressed {
+                    let scale = calculate_scale(&self.size, &self.settings);
+                    self.settings.initial_value = [(position.x as f32 - (self.size.width / 2) as f32) * scale, (position.y as f32 - (self.size.height / 2) as f32) * scale];
                 }
                 self.input_state.prev_cursor_pos = *position;
             }
@@ -358,18 +371,39 @@ impl State {
                 let settings_clone = self.settings.clone();
 
                 egui::trace!(ui);
-                ui.label("Zoom");
+                ui.label("Zoom [Scroll]");
                 ui.add(egui::Slider::new(&mut self.settings.zoom, 0.0..=100000.0).logarithmic(true));
                 ui.separator();
                 ui.label("Iterations");
                 ui.add(egui::Slider::new(&mut self.settings.iterations, 1..=10000).logarithmic(true));
                 ui.separator();
-                ui.label("Centre");
+                ui.label("Centre [Click and drag to pan]");
                 ui.add(egui::DragValue::new(&mut self.settings.centre[0]).speed(0.1 / settings_clone.zoom));
                 ui.add(egui::DragValue::new(&mut self.settings.centre[1]).speed(0.1 / settings_clone.zoom).suffix("i"));
+                if ui.button("Reset").clicked() {
+                    self.settings.centre = [0.0, 0.0];
+                }
+                ui.separator();
+                ui.checkbox(&mut self.settings.julia_set, "Julia set");
+                ui.separator();
+                ui.label("Initial value of z [Right click]");
+                ui.label("(or value of c for Julia sets)");
+                ui.add(egui::DragValue::new(&mut self.settings.initial_value[0]));
+                ui.add(egui::DragValue::new(&mut self.settings.initial_value[1]).suffix("i"));
+                if ui.button("Reset").clicked() {
+                    self.settings.initial_value = [0.0, 0.0];
+                }
                 ui.separator();
                 self.settings.prev_equation = settings_clone.equation;
                 ui.label("Iterative function (WGSL expression)");
+                egui::ComboBox::from_label("Iterative function")
+                    .selected_text(&self.settings.equation)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.settings.equation, "cpow(z, 2.0) + c".parse().unwrap(), "Mandelbrot set");
+                        ui.selectable_value(&mut self.settings.equation, "cpow(abs(z), 2.0) + c".parse().unwrap(), "Burning ship fractal");
+                        ui.selectable_value(&mut self.settings.equation, "cdiv(cpow(z, 3.0), vec2<f32>(1.0, 0.0) + z * z) + c".parse().unwrap(), "Feather fractal")
+                    });
+                ui.label("Custom");
                 ui.text_edit_singleline(&mut self.settings.equation);
                 if !settings_clone.equation_valid { ui.label(RichText::new("Expression invalid").color(Color32::RED)); }
             });
