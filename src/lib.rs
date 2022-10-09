@@ -73,7 +73,7 @@ fn calculate_scale(size: &winit::dpi::PhysicalSize<u32>, settings: &UserSettings
 }
 
 fn calculate_uniforms(size: &winit::dpi::PhysicalSize<u32>, settings: &UserSettings) -> Uniforms {
-    let scale = calculate_scale(&size, &settings);
+    let scale = calculate_scale(size, settings);
     Uniforms {
         scale,
         centre: [
@@ -476,7 +476,7 @@ impl State {
                     ui.label(RichText::new("Expression invalid").color(Color32::RED));
                 }
             });
-        let full_output = self.platform.end_frame(Some(&window));
+        let full_output = self.platform.end_frame(Some(window));
         let paint_jobs = self.platform.context().tessellate(full_output.shapes);
 
         let mut encoder = self
@@ -592,7 +592,7 @@ pub async fn run() {
                     ref event,
                     window_id,
                 } if window_id == window.id() => {
-                    if !state.input(&event) {
+                    if !state.input(event) {
                         match event {
                             WindowEvent::CloseRequested
                             | WindowEvent::KeyboardInput {
