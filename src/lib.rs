@@ -409,8 +409,6 @@ impl State {
         );
         egui::Window::new(title)
             .title_bar(true)
-            .default_width(300.0)
-            .default_height(200.0)
             .show(&self.platform.context(), |ui| {
                 let settings_clone = self.settings.clone();
 
@@ -482,6 +480,8 @@ impl State {
                 if !settings_clone.equation_valid {
                     ui.label(RichText::new("Expression invalid").color(Color32::RED));
                 }
+                ui.separator();
+                ui.hyperlink_to("Source", "https://github.com/arthomnix/fractal_viewer");
             });
         let full_output = self.platform.end_frame(Some(window));
         let paint_jobs = self.platform.context().tessellate(full_output.shapes);
