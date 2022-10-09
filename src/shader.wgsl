@@ -34,6 +34,14 @@ fn cpow(z: vec2<f32>, p: f32) -> vec2<f32> {
     return vec2<f32>(pow(r, p) * cos(p * arg), pow(r, p) * sin(p * arg));
 }
 
+fn cdiv(w: vec2<f32>, z: vec2<f32>) -> vec2<f32> {
+    return vec2<f32>(w.x * z.x + w.y * z.y, w.y * z.x - w.x * z.y) / (z.x * z.x + z.y * z.y);
+}
+
+fn cmul(w: vec2<f32>, z: vec2<f32>) -> vec2<f32> {
+    return vec2<f32>(z.x * w.x - z.y * w.y, z.x * w.y + z.y * w.x);
+}
+
 fn hsv_rgb(hsv: vec3<f32>) -> vec3<f32> {
     if (hsv.y == 0.0) {
         return vec3<f32>(hsv.z, hsv.z, hsv.z);

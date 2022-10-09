@@ -511,7 +511,20 @@ pub async fn run() {
 
                     state.platform.update_time(start_time.elapsed().as_secs_f64());
                     if last_title_update.elapsed() >= Duration::from_secs(1) {
-                        window.set_title(&*format!("{} {} [{} | {:.0} FPS]", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), state.backend, (1.0 / state.last_frame.elapsed().as_secs_f32())));
+                        let title = format!("{} {} [{} | {} | {:.0} FPS]", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), state.backend, std::env::consts::ARCH, (1.0 / state.last_frame.elapsed().as_secs_f32()));
+                        window.set_title(&*title);
+                        #[cfg(target_arch="wasm32")]
+                        {
+                            web_sys::window()
+                                .and_then(|win| {
+                                    win.document()
+                                })
+                                .and_then(|doc| {
+                                    let title_element = doc.get_element_by_id("title")?;
+                                    title_element.set_inner_html(&title);
+                                    Some(())
+                                });
+                        }
                         last_title_update =  Instant::now();
                     }
                     state.update();
