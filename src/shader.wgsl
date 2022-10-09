@@ -1,5 +1,6 @@
 struct Uniforms {
     scale: f32,
+    escape_threshold: u32,
     centre: vec2<f32>,
     iterations: i32,
     julia_set: u32,
@@ -78,17 +79,17 @@ fn hsv_rgb(hsv: vec3<f32>) -> vec3<f32> {
     }
 }
 
-fn get_fragment_colour(c: vec2<f32>, iterations: i32) -> vec4<f32> {
+fn get_fragment_colour(c: vec2<f32>) -> vec4<f32> {
     var i: i32 = 0;
 
     if (uniforms.julia_set < 1u) {
         for (
             var z: vec2<f32> = uniforms.initial_value;
-            cabs_squared(z) < 4.0;
+            cabs_squared(z) < f32(uniforms.escape_threshold * uniforms.escape_threshold);
             z = REPLACE_FRACTAL_EQN // gets replaced by user-defined expression
         ) {
             i++;
-            if (i == iterations) {
+            if (i == uniforms.iterations) {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
         }
@@ -96,20 +97,20 @@ fn get_fragment_colour(c: vec2<f32>, iterations: i32) -> vec4<f32> {
         var z: vec2<f32> = c;
         var c: vec2<f32> = uniforms.initial_value;
         for (;
-            cabs_squared(z) < 4.0;
+            cabs_squared(z) < f32(uniforms.escape_threshold * uniforms.escape_threshold);
             z = REPLACE_FRACTAL_EQN // gets replaced by user-defined expression
         ) {
             i++;
-            if (i == iterations) {
+            if (i == uniforms.iterations) {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
         }
     }
 
-    return vec4<f32>(hsv_rgb(vec3<f32>(log(f32(i) + 1.0) / log(f32(iterations) + 1.0), 0.8, 0.8)), 1.0);
+    return vec4<f32>(hsv_rgb(vec3<f32>(log(f32(i) + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8)), 1.0);
 }
 
 @fragment
 fn fs_main(@builtin(position) in: vec4<f32>) -> @location(0) vec4<f32> {
-    return get_fragment_colour(in.xy * uniforms.scale - uniforms.centre, uniforms.iterations);
+    return get_fragment_colour(in.xy * uniforms.scale - uniforms.centre);
 }

@@ -29,7 +29,7 @@ fn calculate_scale(size: &winit::dpi::PhysicalSize<u32>, settings: &UserSettings
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
     scale: f32,
-    _pad: u32,
+    escape_threshold: u32,
     centre: [f32; 2],
     iterations: i32,
     julia_set: u32,
@@ -48,7 +48,7 @@ impl Uniforms {
             iterations: settings.iterations,
             julia_set: settings.julia_set as u32,
             initial_value: settings.initial_value,
-            _pad: 0,
+            escape_threshold: settings.escape_threshold,
         }
     }
 }
@@ -63,6 +63,7 @@ struct UserSettings {
     equation_valid: bool,
     julia_set: bool,
     initial_value: [f32; 2],
+    escape_threshold: u32,
 }
 
 struct InputState {
@@ -156,6 +157,7 @@ impl State {
             equation_valid: true,
             julia_set: false,
             initial_value: [0.0, 0.0],
+            escape_threshold: 2,
         };
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -272,14 +274,12 @@ impl State {
 
     fn input(&mut self, event: &WindowEvent) -> bool {
         match event {
-            WindowEvent::MouseWheel { delta, .. } => match delta {
-                MouseScrollDelta::LineDelta(_, vert_scroll) => {
-                    self.settings.zoom += vert_scroll / 5.0 * self.settings.zoom
-                }
-                MouseScrollDelta::PixelDelta(pos) => {
-                    self.settings.zoom += pos.y as f32 / 300.0 * self.settings.zoom
-                }
-            },
+            WindowEvent::MouseWheel { delta, .. } => {
+                self.settings.zoom += match delta {
+                    MouseScrollDelta::LineDelta(_, vert_scroll) => vert_scroll / 5.0,
+                    MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 300.0,
+                } * self.settings.zoom;
+            }
             WindowEvent::MouseInput { state, button, .. } => match button {
                 MouseButton::Left => match state {
                     ElementState::Pressed => self.input_state.lmb_pressed = true,
@@ -423,6 +423,11 @@ impl State {
                 ui.label("Iterations");
                 ui.add(
                     egui::Slider::new(&mut self.settings.iterations, 1..=10000).logarithmic(true),
+                );
+                ui.label("Escape threshold");
+                ui.add(
+                    egui::Slider::new(&mut self.settings.escape_threshold, 1..=10000)
+                        .logarithmic(true),
                 );
                 ui.separator();
                 ui.label("Centre [Click and drag to pan]");
