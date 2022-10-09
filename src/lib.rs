@@ -282,7 +282,7 @@ impl State {
                     self.settings.centre[1] -= (position.y - self.input_state.prev_cursor_pos.y) as f32 * calculate_scale(&self.size, &self.settings);
                 } else if self.input_state.rmb_pressed {
                     let scale = calculate_scale(&self.size, &self.settings);
-                    self.settings.initial_value = [(position.x as f32 - (self.size.width / 2) as f32) * scale, (position.y as f32 - (self.size.height / 2) as f32) * scale];
+                    self.settings.initial_value = [(position.x as f32 - (self.size.width / 2) as f32) * scale + self.settings.centre[0], (position.y as f32 - (self.size.height / 2) as f32) * scale + self.settings.centre[1]];
                 }
                 self.input_state.prev_cursor_pos = *position;
             }
