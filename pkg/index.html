@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title id="title">fractal_viewer</title>
+</head>
+<body>
+<div id="fractal-viewer"></div>
+<script type="module">
+document.addEventListener('contextmenu', event => event.preventDefault());
+
+import init from "./fractal_viewer.js";
+init().then(() => {
+	console.log("WASM loaded!");
+});
+</script>
+<style>
+html, body, div, canvas { display: block; margin: 0; padding: 0; }
+</style>
+</body>
+</html>
