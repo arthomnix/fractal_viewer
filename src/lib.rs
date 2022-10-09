@@ -19,10 +19,10 @@ use winit::{
 fn calculate_scale(size: &winit::dpi::PhysicalSize<u32>, settings: &UserSettings) -> f32 {
     4.0 / settings.zoom
         / (if size.width < size.height {
-        size.width
-    } else {
-        size.height
-    }) as f32
+            size.width
+        } else {
+            size.height
+        }) as f32
 }
 
 #[repr(C)]
@@ -55,40 +55,39 @@ impl Uniforms {
 
 #[derive(Clone)]
 struct UserSettings {
-zoom: f32,
-centre: [f32; 2],
-iterations: i32,
-equation: String,
-prev_equation: String,
-equation_valid: bool,
-julia_set: bool,
-initial_value: [f32; 2],
+    zoom: f32,
+    centre: [f32; 2],
+    iterations: i32,
+    equation: String,
+    prev_equation: String,
+    equation_valid: bool,
+    julia_set: bool,
+    initial_value: [f32; 2],
 }
 
 struct InputState {
-lmb_pressed: bool,
-rmb_pressed: bool,
-prev_cursor_pos: PhysicalPosition<f64>,
+    lmb_pressed: bool,
+    rmb_pressed: bool,
+    prev_cursor_pos: PhysicalPosition<f64>,
 }
 
 struct State {
-surface: wgpu::Surface,
-device: wgpu::Device,
-queue: wgpu::Queue,
-config: wgpu::SurfaceConfiguration,
-size: winit::dpi::PhysicalSize<u32>,
-render_pipeline: wgpu::RenderPipeline,
-uniform_buffer: wgpu::Buffer,
-uniform_bind_group: wgpu::BindGroup,
-uniform_bind_group_layout: wgpu::BindGroupLayout,
-last_frame: Instant,
-backend: &'static str,
-settings: UserSettings,
-input_state: InputState,
-platform: Platform,
-rpass: RenderPass,
+    surface: wgpu::Surface,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,
+    size: winit::dpi::PhysicalSize<u32>,
+    render_pipeline: wgpu::RenderPipeline,
+    uniform_buffer: wgpu::Buffer,
+    uniform_bind_group: wgpu::BindGroup,
+    uniform_bind_group_layout: wgpu::BindGroupLayout,
+    last_frame: Instant,
+    backend: &'static str,
+    settings: UserSettings,
+    input_state: InputState,
+    platform: Platform,
+    rpass: RenderPass,
 }
-
 
 impl State {
     async fn new(window: &Window) -> Self {
