@@ -28,7 +28,7 @@ enum InvalidSettingsImportError {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl InvalidSettingsImportError {
-    fn to_string(&self) -> &str {
+    fn to_str(&self) -> &str {
         match self {
             InvalidSettingsImportError::InvalidFormat => "Invalid settings string format",
             InvalidSettingsImportError::VersionMismatch => "Settings string created with a different version",
@@ -41,14 +41,14 @@ impl InvalidSettingsImportError {
 #[cfg(not(target_arch = "wasm32"))]
 impl Display for InvalidSettingsImportError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(f, "{}", self.to_str())
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl std::error::Error for InvalidSettingsImportError {
     fn description(&self) -> &str {
-        self.to_string()
+        self.to_str()
     }
 }
 
