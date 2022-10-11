@@ -26,6 +26,7 @@ enum InvalidSettingsImportError {
     DeserialisationFailed,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl InvalidSettingsImportError {
     fn to_string(&self) -> &str {
         match self {
