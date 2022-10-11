@@ -529,7 +529,7 @@ impl State {
 
                 let settings_clone = self.settings.clone();
 
-                ui.collapsing("Zoom [scroll]", |ui| {
+                ui.collapsing("Zoom [Scroll]", |ui| {
                     ui.label("Zoom");
                     ui.add(
                         egui::Slider::new(&mut self.settings.zoom, 0.0..=100000.0)
