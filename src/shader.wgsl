@@ -1,6 +1,6 @@
 struct Uniforms {
     scale: f32,
-    escape_threshold: u32,
+    escape_threshold: f32,
     centre: vec2<f32>,
     iterations: i32,
     julia_set: u32,
@@ -85,7 +85,7 @@ fn get_fragment_colour(c: vec2<f32>) -> vec4<f32> {
     if (uniforms.julia_set < 1u) {
         for (
             var z: vec2<f32> = uniforms.initial_value;
-            cabs_squared(z) < f32(uniforms.escape_threshold * uniforms.escape_threshold);
+            cabs_squared(z) < uniforms.escape_threshold * uniforms.escape_threshold;
             z = REPLACE_FRACTAL_EQN // gets replaced by user-defined expression
         ) {
             i++;
@@ -97,7 +97,7 @@ fn get_fragment_colour(c: vec2<f32>) -> vec4<f32> {
         var z: vec2<f32> = c;
         var c: vec2<f32> = uniforms.initial_value;
         for (;
-            cabs_squared(z) < f32(uniforms.escape_threshold * uniforms.escape_threshold);
+            cabs_squared(z) < uniforms.escape_threshold * uniforms.escape_threshold;
             z = REPLACE_FRACTAL_EQN // gets replaced by user-defined expression
         ) {
             i++;

@@ -1,10 +1,11 @@
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
-use ::egui::FontDefinitions;
-use egui::{Color32, RichText};
+#[cfg(not(target_arch = "wasm32"))]
+use std::fmt::{Display, Formatter};
+
+use egui::Color32;
 use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
-use egui_winit_platform::{Platform, PlatformDescriptor};
 use instant::{Duration, Instant};
 use naga::valid::{Capabilities, ValidationFlags};
 use wgpu::util::DeviceExt;
@@ -16,6 +17,40 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, serde::Deserialize)]
+enum InvalidSettingsImportError {
+    InvalidFormat,
+    VersionMismatch,
+    InvalidBase64,
+    DeserialisationFailed,
+}
+
+impl InvalidSettingsImportError {
+    fn to_string(&self) -> &str {
+        match self {
+            InvalidSettingsImportError::InvalidFormat => "Invalid settings string format",
+            InvalidSettingsImportError::VersionMismatch => "Settings string created with a different version",
+            InvalidSettingsImportError::InvalidBase64 => "Base64 decoding failed",
+            InvalidSettingsImportError::DeserialisationFailed => "Deserialising data failed",
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Display for InvalidSettingsImportError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl std::error::Error for InvalidSettingsImportError {
+    fn description(&self) -> &str {
+        self.to_string()
+    }
+}
+
 fn calculate_scale(size: &winit::dpi::PhysicalSize<u32>, settings: &UserSettings) -> f32 {
     4.0 / settings.zoom
         / (if size.width < size.height {
@@ -25,11 +60,17 @@ fn calculate_scale(size: &winit::dpi::PhysicalSize<u32>, settings: &UserSettings
         }) as f32
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn get_major_minor_version() -> String {
+    let mut version_iterator = env!("CARGO_PKG_VERSION").split(".");
+    format!("{}.{}", version_iterator.next().unwrap(), version_iterator.next().unwrap())
+}
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
     scale: f32,
-    escape_threshold: u32,
+    escape_threshold: f32,
     centre: [f32; 2],
     iterations: i32,
     julia_set: u32,
@@ -54,6 +95,7 @@ impl Uniforms {
 }
 
 #[derive(Clone)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(serde::Serialize, serde::Deserialize))]
 struct UserSettings {
     zoom: f32,
     centre: [f32; 2],
@@ -63,7 +105,37 @@ struct UserSettings {
     equation_valid: bool,
     julia_set: bool,
     initial_value: [f32; 2],
-    escape_threshold: u32,
+    escape_threshold: f32,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl UserSettings {
+    fn to_string(&self) -> String {
+        let encoded = bincode::serialize(&self).unwrap();
+        format!("{};{}", get_major_minor_version(), base64::encode(encoded))
+    }
+
+    fn from_string(string: &String) -> Result<Self, InvalidSettingsImportError> {
+        if string.is_empty() { return Err(InvalidSettingsImportError::InvalidFormat); }
+
+        let mut iterator = string.split(";");
+        match iterator.next() {
+            Some(major_minor_version) => {if major_minor_version == get_major_minor_version() {
+                    match iterator.next() {
+                        Some(base64) => match base64::decode(base64) {
+                            Ok(bytes) => match bincode::deserialize::<'_, Self>(bytes.as_slice()) {
+                                Ok(result) => Ok(result),
+                                Err(_) => Err(InvalidSettingsImportError::DeserialisationFailed)
+                            },
+                            Err(_) => Err(InvalidSettingsImportError::InvalidBase64)
+                        },
+                        None => Err(InvalidSettingsImportError::InvalidFormat),
+                    }
+                } else { Err(InvalidSettingsImportError::VersionMismatch) }
+            }
+            None => Err(InvalidSettingsImportError::InvalidFormat),
+        }
+    }
 }
 
 struct InputState {
@@ -83,15 +155,23 @@ struct State {
     uniform_bind_group: wgpu::BindGroup,
     uniform_bind_group_layout: wgpu::BindGroupLayout,
     last_frame: Instant,
+    prev_frame_time: Duration,
     backend: &'static str,
     settings: UserSettings,
     input_state: InputState,
-    platform: Platform,
+    egui_state: egui_winit::State,
+    context: egui::Context,
     rpass: RenderPass,
+    #[cfg(not(target_arch = "wasm32"))]
+    options_export_text: String,
+    #[cfg(not(target_arch = "wasm32"))]
+    import_error: Option<InvalidSettingsImportError>,
+    #[cfg(not(target_arch = "wasm32"))]
+    clipboard: arboard::Clipboard,
 }
 
 impl State {
-    async fn new(window: &Window) -> Self {
+    async fn new(window: &Window, ev_loop: &EventLoop<()>) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::Backends::all());
@@ -138,13 +218,8 @@ impl State {
 
         surface.configure(&device, &config);
 
-        let platform = Platform::new(PlatformDescriptor {
-            physical_width: size.width as u32,
-            physical_height: size.height as u32,
-            scale_factor: window.scale_factor(),
-            font_definitions: FontDefinitions::default(),
-            style: Default::default(),
-        });
+        let egui_state = egui_winit::State::new(&ev_loop);
+        let context = egui::Context::default();
 
         let rpass = RenderPass::new(&device, config.format, 1);
 
@@ -157,7 +232,7 @@ impl State {
             equation_valid: true,
             julia_set: false,
             initial_value: [0.0, 0.0],
-            escape_threshold: 2,
+            escape_threshold: 2.0,
         };
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -251,6 +326,7 @@ impl State {
             uniform_bind_group,
             uniform_bind_group_layout,
             last_frame: Instant::now(),
+            prev_frame_time: Duration::from_secs(0),
             backend,
             settings,
             input_state: InputState {
@@ -258,8 +334,15 @@ impl State {
                 rmb_pressed: false,
                 prev_cursor_pos: PhysicalPosition { x: 0.0, y: 0.0 },
             },
-            platform,
+            egui_state,
+            context,
             rpass,
+            #[cfg(not(target_arch = "wasm32"))]
+            options_export_text: String::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            import_error: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            clipboard: arboard::Clipboard::new().unwrap(),
         }
     }
 
@@ -390,6 +473,8 @@ impl State {
             0,
             bytemuck::cast_slice(&[Uniforms::new(&self.size, &self.settings)]),
         );
+
+        self.prev_frame_time = self.last_frame.elapsed();
         self.last_frame = Instant::now();
     }
 
@@ -400,89 +485,125 @@ impl State {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        self.platform.begin_frame();
-        let title = format!(
-            "{} {} | {}",
-            env!("CARGO_PKG_NAME"),
-            env!("CARGO_PKG_VERSION"),
-            self.backend
-        );
-        egui::Window::new(title)
+        let input = self.egui_state.take_egui_input(&window);
+        self.context.begin_frame(input);
+
+        egui::Window::new(env!("CARGO_PKG_NAME"))
             .title_bar(true)
-            .show(&self.platform.context(), |ui| {
+            .show(&self.context, |ui| {
+                egui::trace!(ui);
+
+                ui.label(format!("Version {} ({}{}{})", env!("CARGO_PKG_VERSION"), std::env::consts::OS, if std::env::consts::OS.is_empty() { "" } else { " " }, std::env::consts::ARCH));
+                ui.label(format!("Render backend: {}", self.backend));
+                ui.label(format!("Last frame: {:.1}ms ({:.0} FPS)", self.prev_frame_time.as_micros() as f64 / 1000.0, 1.0 / self.prev_frame_time.as_secs_f64()));
+                ui.separator();
+
                 let settings_clone = self.settings.clone();
 
-                egui::trace!(ui);
-                ui.label("Zoom [Scroll]");
-                ui.add(
-                    egui::Slider::new(&mut self.settings.zoom, 0.0..=100000.0).logarithmic(true),
-                );
+                ui.collapsing("Zoom [scroll]", |ui| {
+                    ui.label("Zoom");
+                    ui.add(
+                        egui::Slider::new(&mut self.settings.zoom, 0.0..=100000.0).logarithmic(true),
+                    );
+                });
                 ui.separator();
-                ui.label("Iterations");
-                ui.add(
-                    egui::Slider::new(&mut self.settings.iterations, 1..=10000).logarithmic(true),
-                );
-                ui.label("Escape threshold");
-                ui.add(
-                    egui::Slider::new(&mut self.settings.escape_threshold, 1..=10000)
-                        .logarithmic(true),
-                );
+                ui.collapsing("Iterations", |ui| {
+                    ui.label("Iterations");
+                    ui.add(
+                        egui::Slider::new(&mut self.settings.iterations, 1..=10000).logarithmic(true),
+                    );
+                    ui.label("Escape threshold");
+                    ui.add(
+                        egui::Slider::new(&mut self.settings.escape_threshold, 1.0..=13043817825300000000.0) // approximate square root of maximum f32
+                            .logarithmic(true),
+                    );
+                });
                 ui.separator();
-                ui.label("Centre [Click and drag to pan]");
-                ui.add(
-                    egui::DragValue::new(&mut self.settings.centre[0])
-                        .speed(0.1 / settings_clone.zoom),
-                );
-                ui.add(
-                    egui::DragValue::new(&mut self.settings.centre[1])
-                        .speed(0.1 / settings_clone.zoom)
-                        .suffix("i"),
-                );
-                if ui.button("Reset").clicked() {
-                    self.settings.centre = [0.0, 0.0];
-                }
+                ui.collapsing("Centre [Click and drag to pan]", |ui| {
+                    ui.label("Centre");
+                    ui.add(
+                        egui::DragValue::new(&mut self.settings.centre[0])
+                            .speed(0.1 / settings_clone.zoom),
+                    );
+                    ui.add(
+                        egui::DragValue::new(&mut self.settings.centre[1])
+                            .speed(0.1 / settings_clone.zoom)
+                            .suffix("i"),
+                    );
+                    if ui.button("Reset").clicked() {
+                        self.settings.centre = [0.0, 0.0];
+                    }
+                });
                 ui.separator();
                 ui.checkbox(&mut self.settings.julia_set, "Julia set");
                 ui.separator();
-                ui.label("Initial value of z [Right click]");
-                ui.label("(or value of c for Julia sets)");
-                ui.add(egui::DragValue::new(&mut self.settings.initial_value[0]));
-                ui.add(egui::DragValue::new(&mut self.settings.initial_value[1]).suffix("i"));
-                if ui.button("Reset").clicked() {
-                    self.settings.initial_value = [0.0, 0.0];
-                }
+                ui.collapsing("Initial value [Right click and drag]", |ui| {
+                    ui.label("Initial value of z [Right click]");
+                    ui.label("(or value of c for Julia sets)");
+                    ui.add(egui::DragValue::new(&mut self.settings.initial_value[0]).speed(0.01));
+                    ui.add(egui::DragValue::new(&mut self.settings.initial_value[1]).speed(0.01).suffix("i"));
+                    if ui.button("Reset").clicked() {
+                        self.settings.initial_value = [0.0, 0.0];
+                    }
+                });
                 ui.separator();
-                self.settings.prev_equation = settings_clone.equation;
-                ui.label("Iterative function (WGSL expression)");
-                egui::ComboBox::from_label("Iterative function")
-                    .selected_text(&self.settings.equation)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut self.settings.equation,
-                            "cpow(z, 2.0) + c".parse().unwrap(),
-                            "Mandelbrot set",
-                        );
-                        ui.selectable_value(
-                            &mut self.settings.equation,
-                            "cpow(abs(z), 2.0) + c".parse().unwrap(),
-                            "Burning ship fractal",
-                        );
-                        ui.selectable_value(
-                            &mut self.settings.equation,
-                            "cdiv(cpow(z, 3.0), vec2<f32>(1.0, 0.0) + z * z) + c"
-                                .parse()
-                                .unwrap(),
-                            "Feather fractal",
-                        )
+                ui.collapsing("Equation", |ui| {
+                    self.settings.prev_equation = settings_clone.equation;
+                    ui.label("Iterative function (WGSL expression)");
+                    egui::ComboBox::from_label("Iterative function")
+                        .selected_text(&self.settings.equation)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.settings.equation,
+                                "cpow(z, 2.0) + c".parse().unwrap(),
+                                "Mandelbrot set",
+                            );
+                            ui.selectable_value(
+                                &mut self.settings.equation,
+                                "cpow(abs(z), 2.0) + c".parse().unwrap(),
+                                "Burning ship fractal",
+                            );
+                            ui.selectable_value(
+                                &mut self.settings.equation,
+                                "cdiv(cpow(z, 3.0), vec2<f32>(1.0, 0.0) + z * z) + c"
+                                    .parse()
+                                    .unwrap(),
+                                "Feather fractal",
+                            )
+                        });
+                    ui.label("Custom");
+                    ui.text_edit_singleline(&mut self.settings.equation);
+                    if !settings_clone.equation_valid {
+                        ui.colored_label(Color32::RED, "Invalid expression");
+                    }
+                });
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    ui.separator();
+                    ui.collapsing("Export and import options", |ui| {
+                        ui.text_edit_singleline(&mut self.options_export_text);
+                        if ui.button("Export").clicked() {
+                            self.options_export_text = self.settings.to_string();
+                            self.clipboard.set_text(&self.options_export_text).expect("Setting clipboard value failed");
+                        }
+                        if ui.button("Import").clicked() {
+                            match UserSettings::from_string(&self.options_export_text) {
+                                Ok(settings) => {
+                                    self.settings = settings;
+                                    self.import_error = None;
+                                },
+                                Err(e) => self.import_error = Some(e),
+                            };
+                        }
+                        match &self.import_error {
+                            Some(e) => { ui.colored_label(Color32::RED, format!("Import failed: {}", e)); },
+                            _ => {},
+                        };
                     });
-                ui.label("Custom");
-                ui.text_edit_singleline(&mut self.settings.equation);
-                if !settings_clone.equation_valid {
-                    ui.label(RichText::new("Expression invalid").color(Color32::RED));
                 }
             });
-        let full_output = self.platform.end_frame(Some(window));
-        let paint_jobs = self.platform.context().tessellate(full_output.shapes);
+        let full_output = self.context.end_frame();
+        let paint_jobs = self.context.tessellate(full_output.shapes);
 
         let mut encoder = self
             .device
@@ -493,7 +614,7 @@ impl State {
         let screen_descriptor = ScreenDescriptor {
             physical_width: self.config.width,
             physical_height: self.config.height,
-            scale_factor: window.scale_factor() as f32,
+            scale_factor: 1.0,
         };
 
         let tdelta = full_output.textures_delta;
@@ -584,102 +705,95 @@ pub async fn run() {
             .expect("Couldn't append canvas to document");
     }
 
-    let mut state = State::new(&window).await;
+    let mut state = State::new(&window, &event_loop).await;
 
-    let start_time = Instant::now();
     let mut last_title_update = Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
-        state.platform.handle_event(&event);
-        if !state.platform.captures_event(&event) {
-            match event {
-                Event::WindowEvent {
-                    ref event,
-                    window_id,
-                } if window_id == window.id() => {
-                    if !state.input(event) {
-                        match event {
-                            WindowEvent::CloseRequested
-                            | WindowEvent::KeyboardInput {
-                                input:
-                                    KeyboardInput {
-                                        state: ElementState::Pressed,
-                                        virtual_keycode: Some(VirtualKeyCode::Escape),
-                                        ..
-                                    },
-                                ..
-                            } => *control_flow = ControlFlow::Exit,
-                            WindowEvent::Resized(physical_size) => state.resize(*physical_size),
-                            WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                                state.resize(**new_inner_size)
-                            }
-                            _ => {}
+        match event {
+            Event::WindowEvent {
+                ref event,
+                window_id,
+            } if window_id == window.id() => {
+                if !state.egui_state.on_event(&state.context, &event) && !state.input(event) {
+                    match event {
+                        WindowEvent::CloseRequested
+                        | WindowEvent::KeyboardInput {
+                            input:
+                                KeyboardInput {
+                                    state: ElementState::Pressed,
+                                    virtual_keycode: Some(VirtualKeyCode::Escape),
+                                    ..
+                                },
+                            ..
+                        } => *control_flow = ControlFlow::Exit,
+                        WindowEvent::Resized(physical_size) => state.resize(*physical_size),
+                        WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                            state.resize(**new_inner_size)
                         }
+                        _ => {}
                     }
                 }
-                Event::MainEventsCleared => window.request_redraw(),
-                Event::RedrawRequested(window_id) => {
-                    if window_id == window.id() {
+            }
+            Event::MainEventsCleared => window.request_redraw(),
+            Event::RedrawRequested(window_id) => {
+                if window_id == window.id() {
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        use winit::dpi::PhysicalSize;
+
+                        web_sys::window()
+                            .and_then(|win| {
+                                let size = PhysicalSize::new(
+                                    win.inner_width()
+                                        .expect("Failed to get window width")
+                                        .as_f64()
+                                        .unwrap(),
+                                    win.inner_height()
+                                        .expect("Failed to get window height")
+                                        .as_f64()
+                                        .unwrap(),
+                                );
+                                window.set_inner_size(size);
+                                Some(())
+                            })
+                            .expect("Couldn't resize window");
+                    }
+
+                    if last_title_update.elapsed() >= Duration::from_secs(1) {
+                        let title = format!(
+                            "{} {} [{} | {} | {:.0} FPS]",
+                            env!("CARGO_PKG_NAME"),
+                            env!("CARGO_PKG_VERSION"),
+                            state.backend,
+                            std::env::consts::ARCH,
+                            (1.0 / state.prev_frame_time.as_secs_f64())
+                        );
+                        window.set_title(&*title);
                         #[cfg(target_arch = "wasm32")]
                         {
-                            use winit::dpi::PhysicalSize;
-
                             web_sys::window()
-                                .and_then(|win| {
-                                    let size = PhysicalSize::new(
-                                        win.inner_width()
-                                            .expect("Failed to get window width")
-                                            .as_f64()
-                                            .unwrap(),
-                                        win.inner_height()
-                                            .expect("Failed to get window height")
-                                            .as_f64()
-                                            .unwrap(),
-                                    );
-                                    window.set_inner_size(size);
+                                .and_then(|win| win.document())
+                                .and_then(|doc| {
+                                    let title_element = doc.get_element_by_id("title")?;
+                                    title_element.set_inner_html(&title);
                                     Some(())
-                                })
-                                .expect("Couldn't resize window");
+                                });
                         }
-
-                        state
-                            .platform
-                            .update_time(start_time.elapsed().as_secs_f64());
-                        if last_title_update.elapsed() >= Duration::from_secs(1) {
-                            let title = format!(
-                                "{} {} [{} | {} | {:.0} FPS]",
-                                env!("CARGO_PKG_NAME"),
-                                env!("CARGO_PKG_VERSION"),
-                                state.backend,
-                                std::env::consts::ARCH,
-                                (1.0 / state.last_frame.elapsed().as_secs_f32())
-                            );
-                            window.set_title(&*title);
-                            #[cfg(target_arch = "wasm32")]
-                            {
-                                web_sys::window()
-                                    .and_then(|win| win.document())
-                                    .and_then(|doc| {
-                                        let title_element = doc.get_element_by_id("title")?;
-                                        title_element.set_inner_html(&title);
-                                        Some(())
-                                    });
-                            }
-                            last_title_update = Instant::now();
+                        last_title_update = Instant::now();
+                    }
+                    state.update();
+                    match state.render(&window) {
+                        Ok(_) => {}
+                        Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
+                        Err(wgpu::SurfaceError::OutOfMemory) => {
+                            *control_flow = ControlFlow::Exit
                         }
-                        state.update();
-                        match state.render(&window) {
-                            Ok(_) => {}
-                            Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                            Err(wgpu::SurfaceError::OutOfMemory) => {
-                                *control_flow = ControlFlow::Exit
-                            }
-                            Err(e) => eprintln!("{:?}", e),
-                        }
+                        Err(e) => eprintln!("{:?}", e),
                     }
                 }
-                _ => {}
             }
+            _ => {}
         }
     });
 }
