@@ -137,7 +137,10 @@ impl UserSettings {
                     match iterator.next() {
                         Some(base64) => match base64::decode(base64) {
                             Ok(bytes) => match bincode::deserialize::<'_, Self>(bytes.as_slice()) {
-                                Ok(result) => Ok(result),
+                                Ok(mut result) => {
+                                    result.prev_equation = String::new();
+                                    Ok(result)
+                                },
                                 Err(_) => Err(InvalidSettingsImportError::DeserialisationFailed),
                             },
                             Err(_) => Err(InvalidSettingsImportError::InvalidBase64),
