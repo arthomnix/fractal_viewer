@@ -65,7 +65,7 @@ fn calculate_scale(size: &winit::dpi::PhysicalSize<u32>, settings: &UserSettings
 
 #[cfg(not(target_arch = "wasm32"))]
 fn get_major_minor_version() -> String {
-    let mut version_iterator = env!("CARGO_PKG_VERSION").split(".");
+    let mut version_iterator = env!("CARGO_PKG_VERSION").split('.');
     format!(
         "{}.{}",
         version_iterator.next().unwrap(),
@@ -120,17 +120,17 @@ struct UserSettings {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl UserSettings {
-    fn to_string(&self) -> String {
+    fn export_string(&self) -> String {
         let encoded = bincode::serialize(&self).unwrap();
         format!("{};{}", get_major_minor_version(), base64::encode(encoded))
     }
 
-    fn from_string(string: &String) -> Result<Self, InvalidSettingsImportError> {
+    fn import_string(string: &String) -> Result<Self, InvalidSettingsImportError> {
         if string.is_empty() {
             return Err(InvalidSettingsImportError::InvalidFormat);
         }
 
-        let mut iterator = string.split(";");
+        let mut iterator = string.split(';');
         match iterator.next() {
             Some(major_minor_version) => {
                 if major_minor_version == get_major_minor_version() {
@@ -233,7 +233,7 @@ impl State {
 
         surface.configure(&device, &config);
 
-        let egui_state = egui_winit::State::new(&ev_loop);
+        let egui_state = egui_winit::State::new(ev_loop);
         let context = egui::Context::default();
 
         let rpass = RenderPass::new(&device, config.format, 1);
@@ -500,7 +500,7 @@ impl State {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let input = self.egui_state.take_egui_input(&window);
+        let input = self.egui_state.take_egui_input(window);
         self.context.begin_frame(input);
 
         egui::Window::new(env!("CARGO_PKG_NAME"))
@@ -621,13 +621,13 @@ impl State {
                     ui.collapsing("Export and import options", |ui| {
                         ui.text_edit_singleline(&mut self.options_export_text);
                         if ui.button("Export").clicked() {
-                            self.options_export_text = self.settings.to_string();
+                            self.options_export_text = self.settings.export_string();
                             self.clipboard
                                 .set_text(&self.options_export_text)
                                 .expect("Setting clipboard value failed");
                         }
                         if ui.button("Import").clicked() {
-                            match UserSettings::from_string(&self.options_export_text) {
+                            match UserSettings::import_string(&self.options_export_text) {
                                 Ok(settings) => {
                                     self.settings = settings;
                                     self.import_error = None;
@@ -635,12 +635,9 @@ impl State {
                                 Err(e) => self.import_error = Some(e),
                             };
                         }
-                        match &self.import_error {
-                            Some(e) => {
-                                ui.colored_label(Color32::RED, format!("Import failed: {}", e));
-                            }
-                            _ => {}
-                        };
+                        if let Some(e) = &self.import_error {
+                            ui.colored_label(Color32::RED, format!("Import failed: {e}"));
+                        }
                     });
                 }
             });
@@ -756,7 +753,7 @@ pub async fn run() {
             ref event,
             window_id,
         } if window_id == window.id() => {
-            if !state.egui_state.on_event(&state.context, &event) && !state.input(event) {
+            if !state.egui_state.on_event(&state.context, event) && !state.input(event) {
                 match event {
                     WindowEvent::CloseRequested
                     | WindowEvent::KeyboardInput {
