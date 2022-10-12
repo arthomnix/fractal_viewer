@@ -1,9 +1,9 @@
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_futures::JsFuture;
 
-#[cfg(not(target_arch = "wasm32"))]
 use std::fmt::{Display, Formatter};
-
 use egui::Color32;
 use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
 use instant::{Duration, Instant};
@@ -17,7 +17,6 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, serde::Deserialize)]
 enum InvalidSettingsImportError {
     InvalidFormat,
@@ -26,28 +25,23 @@ enum InvalidSettingsImportError {
     DeserialisationFailed,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl InvalidSettingsImportError {
     fn to_str(&self) -> &str {
         match self {
             InvalidSettingsImportError::InvalidFormat => "Invalid settings string format",
-            InvalidSettingsImportError::VersionMismatch => {
-                "Settings string created with a different version"
-            }
+            InvalidSettingsImportError::VersionMismatch => "Version mismatch or invalid format",
             InvalidSettingsImportError::InvalidBase64 => "Base64 decoding failed",
             InvalidSettingsImportError::DeserialisationFailed => "Deserialising data failed",
         }
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl Display for InvalidSettingsImportError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_str())
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl std::error::Error for InvalidSettingsImportError {
     fn description(&self) -> &str {
         self.to_str()
@@ -63,7 +57,6 @@ fn calculate_scale(size: &winit::dpi::PhysicalSize<u32>, settings: &UserSettings
         }) as f32
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn get_major_minor_version() -> String {
     let mut version_iterator = env!("CARGO_PKG_VERSION").split('.');
     format!(
@@ -101,11 +94,7 @@ impl Uniforms {
     }
 }
 
-#[derive(Clone)]
-#[cfg_attr(
-    not(target_arch = "wasm32"),
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct UserSettings {
     zoom: f32,
     centre: [f32; 2],
@@ -118,7 +107,6 @@ struct UserSettings {
     escape_threshold: f32,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl UserSettings {
     fn export_string(&self) -> String {
         let encoded = bincode::serialize(&self).unwrap();
@@ -180,10 +168,7 @@ struct State {
     egui_state: egui_winit::State,
     context: egui::Context,
     rpass: RenderPass,
-    #[cfg(not(target_arch = "wasm32"))]
-    options_export_text: String,
-    #[cfg(not(target_arch = "wasm32"))]
-    import_error: Option<InvalidSettingsImportError>,
+    import_error: String,
     #[cfg(not(target_arch = "wasm32"))]
     clipboard: arboard::Clipboard,
 }
@@ -252,6 +237,12 @@ impl State {
             initial_value: [0.0, 0.0],
             escape_threshold: 2.0,
         };
+
+        #[cfg(target_arch = "wasm32")]
+        let settings = UserSettings::import_string(&url::Url::parse(&web_sys::window()
+            .and_then(|win| Some(win.location().href().unwrap()))
+            .unwrap()
+        ).unwrap().query().unwrap().to_string()).unwrap_or(settings);
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Window Resolution Uniform Buffer"),
@@ -355,10 +346,7 @@ impl State {
             egui_state,
             context,
             rpass,
-            #[cfg(not(target_arch = "wasm32"))]
-            options_export_text: String::new(),
-            #[cfg(not(target_arch = "wasm32"))]
-            import_error: None,
+            import_error: String::new(),
             #[cfg(not(target_arch = "wasm32"))]
             clipboard: arboard::Clipboard::new().unwrap(),
         }
@@ -618,32 +606,56 @@ impl State {
                         ui.colored_label(Color32::RED, "Invalid expression");
                     }
                 });
-                #[cfg(not(target_arch = "wasm32"))]
                 {
                     ui.separator();
                     ui.collapsing("Export and import options", |ui| {
-                        ui.text_edit_singleline(&mut self.options_export_text);
-                        if ui.button("Export").clicked() {
-                            self.options_export_text = self.settings.export_string();
+                        if ui.button("Export to clipboard").clicked() {
+                            #[cfg(not(target_arch = "wasm32"))]
                             self.clipboard
-                                .set_text(&self.options_export_text)
+                                .set_text(self.settings.export_string())
                                 .expect("Setting clipboard value failed");
+                            #[cfg(target_arch = "wasm32")]
+                            web_sys::window()
+                                .and_then(|win| win.navigator().clipboard())
+                                .and_then(|clipboard| {
+                                    pollster::block_on(JsFuture::from(clipboard.write_text(&self.settings.export_string()))).unwrap_or_default();
+                                    Some(())
+                                });
                         }
-                        if ui.button("Import").clicked() {
-                            match UserSettings::import_string(&self.options_export_text) {
+                        if ui.button("Export link to clipboard").clicked() {
+                            #[cfg(not(target_arch = "wasm32"))]
+                            self.clipboard
+                                .set_text(format!("https://arthomnix.dev/fractal/?{}", self.settings.export_string()))
+                                .expect("Setting clipboard value failed");
+                            #[cfg(target_arch = "wasm32")]
+                            web_sys::window()
+                                .and_then(|win| win.navigator().clipboard())
+                                .and_then(|clipboard| {
+                                    pollster::block_on(JsFuture::from(clipboard.write_text(&format!("https://arthomnix.dev/fractal/?{}", self.settings.export_string())))).unwrap_or_default();
+                                    Some(())
+                                });
+                        }
+                        // Reading clipboard doesn't work in Firefox, so we only support importing from link on web
+                        #[cfg(not(target_arch = "wasm32"))]
+                        if ui.button("Import from clipboard").clicked() {
+                            let text = self.clipboard.get_text().unwrap_or_default();
+                            match UserSettings::import_string(&text) {
                                 Ok(settings) => {
                                     self.settings = settings;
-                                    self.import_error = None;
+                                    self.import_error = String::new();
                                 }
-                                Err(e) => self.import_error = Some(e),
+                                Err(e) => self.import_error = format!("{e}"),
                             };
                         }
-                        if let Some(e) = &self.import_error {
-                            ui.colored_label(Color32::RED, format!("Import failed: {e}"));
+                        if !&self.import_error.is_empty() {
+                            ui.colored_label(Color32::RED, format!("Import failed: {}", self.import_error));
                         }
+                        #[cfg(target_arch = "wasm32")]
+                        ui.label("To import a settings string on web, add '?<string>' to the end of this page's URL.")
                     });
                 }
             });
+
         let full_output = self.context.end_frame();
         let paint_jobs = self.context.tessellate(full_output.shapes);
 
