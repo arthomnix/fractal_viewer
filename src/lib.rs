@@ -226,7 +226,8 @@ impl State {
 
         let rpass = RenderPass::new(&device, config.format, 1);
 
-        let settings = UserSettings {
+        #[allow(unused_mut)] // variable is mutated in wasm but will cause a warning on non-wasm platforms
+        let mut settings = UserSettings {
             zoom: 1.0,
             centre: [0.0, 0.0],
             iterations: 100,
@@ -238,11 +239,19 @@ impl State {
             escape_threshold: 2.0,
         };
 
+        #[allow(unused_mut)]
+        let mut import_error = String::new();
+
         #[cfg(target_arch = "wasm32")]
-        let settings = UserSettings::import_string(&url::Url::parse(&web_sys::window()
+        if let Some(query) = url::Url::parse(&web_sys::window()
             .and_then(|win| Some(win.location().href().unwrap()))
             .unwrap()
-        ).unwrap().query().unwrap().to_string()).unwrap_or(settings);
+        ).unwrap().query() {
+            settings = UserSettings::import_string(&query.to_string()).unwrap_or_else(|e| {
+                import_error = format!("{e}");
+                settings
+            });
+        }
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Window Resolution Uniform Buffer"),
@@ -346,7 +355,7 @@ impl State {
             egui_state,
             context,
             rpass,
-            import_error: String::new(),
+            import_error,
             #[cfg(not(target_arch = "wasm32"))]
             clipboard: arboard::Clipboard::new().unwrap(),
         }
@@ -608,7 +617,9 @@ impl State {
                 });
                 {
                     ui.separator();
-                    ui.collapsing("Export and import options", |ui| {
+                    egui::CollapsingHeader::new("Export and import options")
+                        .default_open(!self.import_error.is_empty())
+                        .show(ui, |ui| {
                         if ui.button("Export to clipboard").clicked() {
                             #[cfg(not(target_arch = "wasm32"))]
                             self.clipboard
