@@ -3,11 +3,11 @@ use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures::JsFuture;
 
-use std::fmt::{Display, Formatter};
 use egui::Color32;
 use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
 use instant::{Duration, Instant};
 use naga::valid::{Capabilities, ValidationFlags};
+use std::fmt::{Display, Formatter};
 use wgpu::util::DeviceExt;
 use wgpu::{Backend, ShaderSource};
 use winit::dpi::PhysicalPosition;
@@ -128,7 +128,7 @@ impl UserSettings {
                                 Ok(mut result) => {
                                     result.prev_equation = String::new();
                                     Ok(result)
-                                },
+                                }
                                 Err(_) => Err(InvalidSettingsImportError::DeserialisationFailed),
                             },
                             Err(_) => Err(InvalidSettingsImportError::InvalidBase64),
@@ -226,7 +226,8 @@ impl State {
 
         let rpass = RenderPass::new(&device, config.format, 1);
 
-        #[allow(unused_mut)] // variable is mutated in wasm but will cause a warning on non-wasm platforms
+        #[allow(unused_mut)]
+        // variable is mutated in wasm but will cause a warning on non-wasm platforms
         let mut settings = UserSettings {
             zoom: 1.0,
             centre: [0.0, 0.0],
@@ -243,10 +244,14 @@ impl State {
         let mut import_error = String::new();
 
         #[cfg(target_arch = "wasm32")]
-        if let Some(query) = url::Url::parse(&web_sys::window()
-            .and_then(|win| Some(win.location().href().unwrap()))
-            .unwrap()
-        ).unwrap().query() {
+        if let Some(query) = url::Url::parse(
+            &web_sys::window()
+                .and_then(|win| Some(win.location().href().unwrap()))
+                .unwrap(),
+        )
+        .unwrap()
+        .query()
+        {
             settings = UserSettings::import_string(&query.to_string()).unwrap_or_else(|e| {
                 import_error = format!("{e}");
                 settings
