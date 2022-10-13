@@ -250,9 +250,12 @@ impl State {
 
         #[cfg(target_arch = "wasm32")]
         {
-            settings = UserSettings::import_string(&web_sys::window()
-                .and_then(|win| Some(win.location().href().unwrap()))
-                .unwrap()).unwrap_or(settings);
+            settings = UserSettings::import_string(
+                &web_sys::window()
+                    .and_then(|win| Some(win.location().href().unwrap()))
+                    .unwrap(),
+            )
+            .unwrap_or(settings);
         }
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
