@@ -109,7 +109,9 @@ struct UserSettings {
 
 impl UserSettings {
     fn export_string(&self) -> String {
-        let encoded = bincode::serialize(&self).unwrap();
+        let mut settings = self.clone();
+        settings.prev_equation = String::new();
+        let encoded = bincode::serialize(&settings).unwrap();
         format!("{};{}", get_major_minor_version(), base64::encode(encoded))
     }
 
@@ -598,21 +600,25 @@ impl State {
                         .show_ui(ui, |ui| {
                             ui.selectable_value(
                                 &mut self.settings.equation,
-                                "cpow(z, 2.0) + c".parse().unwrap(),
+                                "cpow(z, 2.0) + c".to_string(),
                                 "Mandelbrot set",
                             );
                             ui.selectable_value(
                                 &mut self.settings.equation,
-                                "cpow(abs(z), 2.0) + c".parse().unwrap(),
+                                "cpow(abs(z), 2.0) + c".to_string(),
                                 "Burning ship fractal",
                             );
                             ui.selectable_value(
                                 &mut self.settings.equation,
                                 "cdiv(cpow(z, 3.0), vec2<f32>(1.0, 0.0) + z * z) + c"
-                                    .parse()
-                                    .unwrap(),
+                                    .to_string(),
                                 "Feather fractal",
-                            )
+                            );
+                            ui.selectable_value(
+                                &mut self.settings.equation,
+                                "cpow(vec2<f32>(z.x, -z.y), 2.0) + c".to_string(),
+                                "Tricorn fractal",
+                            );
                         });
                     ui.label("Custom");
                     ui.text_edit_singleline(&mut self.settings.equation);
