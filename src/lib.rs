@@ -1,7 +1,5 @@
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_futures::JsFuture;
 
 use egui::Color32;
 use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
@@ -251,18 +249,10 @@ impl State {
         let mut import_error = String::new();
 
         #[cfg(target_arch = "wasm32")]
-        if let Some(query) = url::Url::parse(
-            &web_sys::window()
-                .and_then(|win| Some(win.location().href().unwrap()))
-                .unwrap(),
-        )
-        .unwrap()
-        .query()
         {
-            settings = UserSettings::import_string(&query.to_string()).unwrap_or_else(|e| {
-                import_error = format!("{e}");
-                settings
-            });
+            settings = UserSettings::import_string(&web_sys::window()
+                .and_then(|win| Some(win.location().href().unwrap()))
+                .unwrap()).unwrap_or(settings);
         }
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -645,7 +635,7 @@ impl State {
                             web_sys::window()
                                 .and_then(|win| win.navigator().clipboard())
                                 .and_then(|clipboard| {
-                                    pollster::block_on(JsFuture::from(clipboard.write_text(&self.settings.export_string()))).unwrap_or_default();
+                                    let _ = clipboard.write_text(&self.settings.export_string());
                                     Some(())
                                 });
                         }
@@ -658,7 +648,7 @@ impl State {
                             web_sys::window()
                                 .and_then(|win| win.navigator().clipboard())
                                 .and_then(|clipboard| {
-                                    pollster::block_on(JsFuture::from(clipboard.write_text(&format!("https://arthomnix.dev/fractal/?{}", self.settings.export_string())))).unwrap_or_default();
+                                    let _ = clipboard.write_text(&format!("https://arthomnix.dev/fractal/?{}", self.settings.export_string()));
                                     Some(())
                                 });
                         }
