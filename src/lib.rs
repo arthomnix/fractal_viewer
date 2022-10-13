@@ -114,7 +114,7 @@ impl UserSettings {
     }
 
     fn import_string(string: &String) -> Result<Self, InvalidSettingsImportError> {
-        let string = match url::Url::parse(&string) {
+        let string = match url::Url::parse(string) {
             Ok(url) => url.query().unwrap_or_default().to_string(),
             Err(_) => string.to_string(),
         };
