@@ -124,6 +124,7 @@ impl UserSettings {
         }
 
         let mut iterator = string.split(';');
+
         match iterator.next() {
             Some(major_minor_version) => {
                 if major_minor_version == get_major_minor_version() {
@@ -381,7 +382,7 @@ impl State {
                 self.settings.zoom += match delta {
                     MouseScrollDelta::LineDelta(_, vert_scroll) => vert_scroll / 5.0,
                     MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 300.0,
-                } * self.settings.zoom;
+                }.max(-0.9) * self.settings.zoom;
             }
             WindowEvent::MouseInput { state, button, .. } => match button {
                 MouseButton::Left => match state {
