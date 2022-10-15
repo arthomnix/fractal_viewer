@@ -692,7 +692,10 @@ impl State {
         let screen_descriptor = ScreenDescriptor {
             physical_width: self.config.width,
             physical_height: self.config.height,
+            #[cfg(target_arch = "wasm32")]
             scale_factor: window.scale_factor() as f32,
+            #[cfg(not(target_arch = "wasm32"))]
+            scale_factor: 1.0,
         };
 
         let tdelta = full_output.textures_delta;
