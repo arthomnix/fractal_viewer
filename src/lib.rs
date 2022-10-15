@@ -241,8 +241,8 @@ impl State {
             zoom: 1.0,
             centre: [0.0, 0.0],
             iterations: 100,
-            equation: "cpow(z, 2.0) + c".to_string(),
-            prev_equation: "cpow(z, 2.0) + c".to_string(),
+            equation: "csquare(z) + c".to_string(),
+            prev_equation: "csquare(z) + c".to_string(),
             equation_valid: true,
             julia_set: false,
             initial_value: [0.0, 0.0],
@@ -607,23 +607,23 @@ impl State {
                         .show_ui(ui, |ui| {
                             ui.selectable_value(
                                 &mut self.settings.equation,
-                                "cpow(z, 2.0) + c".to_string(),
+                                "csquare(z) + c".to_string(),
                                 "Mandelbrot set",
                             );
                             ui.selectable_value(
                                 &mut self.settings.equation,
-                                "cpow(abs(z), 2.0) + c".to_string(),
+                                "csquare(abs(z)) + c".to_string(),
                                 "Burning ship fractal",
                             );
                             ui.selectable_value(
                                 &mut self.settings.equation,
-                                "cdiv(cpow(z, 3.0), vec2<f32>(1.0, 0.0) + z * z) + c"
+                                "cdiv(cmul(csquare(z), z), vec2<f32>(1.0, 0.0) + z * z) + c"
                                     .to_string(),
                                 "Feather fractal",
                             );
                             ui.selectable_value(
                                 &mut self.settings.equation,
-                                "cpow(vec2<f32>(z.x, -z.y), 2.0) + c".to_string(),
+                                "csquare(vec2<f32>(z.x, -z.y)) + c".to_string(),
                                 "Tricorn fractal",
                             );
                         });

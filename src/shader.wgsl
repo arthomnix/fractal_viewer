@@ -44,6 +44,10 @@ fn cmul(w: vec2<f32>, z: vec2<f32>) -> vec2<f32> {
     return vec2<f32>(z.x * w.x - z.y * w.y, z.x * w.y + z.y * w.x);
 }
 
+fn csquare(z: vec2<f32>) -> vec2<f32> {
+    return cmul(z, z);
+}
+
 fn hsv_rgb(hsv: vec3<f32>) -> vec3<f32> {
     if (hsv.y == 0.0) {
         return vec3<f32>(hsv.z, hsv.z, hsv.z);
