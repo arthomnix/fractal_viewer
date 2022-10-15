@@ -260,7 +260,7 @@ impl State {
         }
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Window Resolution Uniform Buffer"),
+            label: Some("Uniform Buffer"),
             contents: bytemuck::cast_slice(&[Uniforms::new(&size, &settings)]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -297,6 +297,7 @@ impl State {
                     .into(),
             ),
         });
+
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
