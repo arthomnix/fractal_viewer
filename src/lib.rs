@@ -1,6 +1,9 @@
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+#[cfg(not(target_arch = "wasm32"))]
+use winit::window::Fullscreen;
+
 use egui::Color32;
 use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
 use instant::{Duration, Instant};
@@ -534,6 +537,8 @@ impl State {
                     self.prev_frame_time.as_micros() as f64 / 1000.0,
                     1.0 / self.prev_frame_time.as_secs_f64()
                 ));
+                #[cfg(not(target_arch = "wasm32"))]
+                ui.label("Fullscreen: [F11]");
                 ui.separator();
 
                 let settings_clone = self.settings.clone();
@@ -692,10 +697,11 @@ impl State {
         let screen_descriptor = ScreenDescriptor {
             physical_width: self.config.width,
             physical_height: self.config.height,
-            #[cfg(target_arch = "wasm32")]
-            scale_factor: window.scale_factor() as f32,
-            #[cfg(not(target_arch = "wasm32"))]
-            scale_factor: 1.0,
+            scale_factor: if cfg!(target_arch = "wasm32") {
+                window.scale_factor() as f32
+            } else {
+                1.0
+            },
         };
 
         let tdelta = full_output.textures_delta;
@@ -801,6 +807,26 @@ pub async fn run() {
                             },
                         ..
                     } => *control_flow = ControlFlow::Exit,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::F11),
+                                ..
+                            },
+                        ..
+                    } => {
+                        if window.fullscreen().is_some() {
+                            window.set_fullscreen(None);
+                        } else {
+                            window.current_monitor().map(|monitor| {
+                                monitor.video_modes().next().map(|mode| {
+                                    window.set_fullscreen(Some(Fullscreen::Exclusive(mode)));
+                                })
+                            });
+                        }
+                    }
                     WindowEvent::Resized(physical_size) => state.resize(*physical_size),
                     WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                         state.resize(**new_inner_size)
