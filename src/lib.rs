@@ -383,7 +383,9 @@ impl State {
                 self.settings.zoom += match delta {
                     MouseScrollDelta::LineDelta(_, vert_scroll) => vert_scroll / 5.0,
                     MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 300.0,
-                }.max(-0.9) * self.settings.zoom;
+                }
+                .max(-0.9)
+                    * self.settings.zoom;
             }
             WindowEvent::MouseInput { state, button, .. } => match button {
                 MouseButton::Left => match state {
@@ -690,7 +692,7 @@ impl State {
         let screen_descriptor = ScreenDescriptor {
             physical_width: self.config.width,
             physical_height: self.config.height,
-            scale_factor: 1.0,
+            scale_factor: window.scale_factor() as f32,
         };
 
         let tdelta = full_output.textures_delta;
@@ -755,20 +757,14 @@ pub async fn run() {
 
     #[cfg(target_arch = "wasm32")]
     {
-        use winit::dpi::PhysicalSize;
-
+        use winit::dpi::LogicalSize;
         use winit::platform::web::WindowExtWebSys;
+
         web_sys::window()
             .and_then(|win| {
-                window.set_inner_size(PhysicalSize::new(
-                    win.inner_width()
-                        .expect("Failed to get window width")
-                        .as_f64()
-                        .unwrap(),
-                    win.inner_height()
-                        .expect("Failed to get window height")
-                        .as_f64()
-                        .unwrap(),
+                window.set_inner_size(LogicalSize::new(
+                    win.inner_width().ok()?.as_f64()?,
+                    win.inner_height().ok()?.as_f64()?,
                 ));
                 win.document()
             })
@@ -815,21 +811,14 @@ pub async fn run() {
             if window_id == window.id() {
                 #[cfg(target_arch = "wasm32")]
                 {
-                    use winit::dpi::PhysicalSize;
+                    use winit::dpi::LogicalSize;
 
                     web_sys::window()
                         .and_then(|win| {
-                            let size = PhysicalSize::new(
-                                win.inner_width()
-                                    .expect("Failed to get window width")
-                                    .as_f64()
-                                    .unwrap(),
-                                win.inner_height()
-                                    .expect("Failed to get window height")
-                                    .as_f64()
-                                    .unwrap(),
-                            );
-                            window.set_inner_size(size);
+                            window.set_inner_size(LogicalSize::new(
+                                win.inner_width().ok()?.as_f64()?,
+                                win.inner_height().ok()?.as_f64()?,
+                            ));
                             Some(())
                         })
                         .expect("Couldn't resize window");
