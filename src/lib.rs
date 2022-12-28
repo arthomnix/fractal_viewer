@@ -9,7 +9,6 @@ use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
 use instant::{Duration, Instant};
 use naga::valid::{Capabilities, ValidationFlags};
 use std::fmt::{Display, Formatter};
-use serde::de::Unexpected::Str;
 use wgpu::util::DeviceExt;
 use wgpu::{Backend, ShaderSource};
 use winit::dpi::PhysicalPosition;
