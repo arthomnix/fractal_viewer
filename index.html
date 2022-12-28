@@ -1,24 +1,24 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<title id="title">fractal_viewer</title>
-<meta name="description" content="GPU-accelerated viewer for the Mandelbrot Set, burning ship fractal and similar fractals" />
-<meta name="keywords" content="Mandelbrot, Mandelbrot set, burning ship, burning ship fractal, fractal, Julia set, Julia" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title id="title">fractal_viewer</title>
+    <meta name="description" content="GPU-accelerated viewer for the Mandelbrot Set, burning ship fractal and similar fractals" />
+    <meta name="keywords" content="Mandelbrot, Mandelbrot set, burning ship, burning ship fractal, fractal, Julia set, Julia" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+        html, body, div, canvas { display: block; margin: 0; padding: 0; }
+    </style>
 </head>
 <body>
 <div id="fractal-viewer"></div>
 <script type="module">
-document.addEventListener('contextmenu', event => event.preventDefault());
-window.addEventListener('scroll', event => event.preventDefault());
+    document.addEventListener('contextmenu', event => event.preventDefault());
+    window.addEventListener('scroll', event => event.preventDefault());
 
-import init from "./fractal_viewer.js";
-init().then(() => {
-	console.log("WASM loaded!");
-});
+    import init from "./fractal_viewer.js";
+    init().then(() => {
+        console.log("WASM loaded!");
+    });
 </script>
-<style>
-html, body, div, canvas { display: block; margin: 0; padding: 0; }
-</style>
 </body>
 </html>
