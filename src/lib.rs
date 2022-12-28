@@ -9,6 +9,7 @@ use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
 use instant::{Duration, Instant};
 use naga::valid::{Capabilities, ValidationFlags};
 use std::fmt::{Display, Formatter};
+use serde::de::Unexpected::Str;
 use wgpu::util::DeviceExt;
 use wgpu::{Backend, ShaderSource};
 use winit::dpi::PhysicalPosition;
@@ -128,27 +129,16 @@ impl UserSettings {
 
         let mut iterator = string.split(';');
 
-        match iterator.next() {
-            Some(major_minor_version) => {
-                if major_minor_version == get_major_minor_version() {
-                    match iterator.next() {
-                        Some(base64) => match base64::decode(base64) {
-                            Ok(bytes) => match bincode::deserialize::<'_, Self>(bytes.as_slice()) {
-                                Ok(mut result) => {
-                                    result.prev_equation = String::new();
-                                    Ok(result)
-                                }
-                                Err(_) => Err(InvalidSettingsImportError::DeserialisationFailed),
-                            },
-                            Err(_) => Err(InvalidSettingsImportError::InvalidBase64),
-                        },
-                        None => Err(InvalidSettingsImportError::InvalidFormat),
-                    }
-                } else {
-                    Err(InvalidSettingsImportError::VersionMismatch)
-                }
-            }
-            None => Err(InvalidSettingsImportError::InvalidFormat),
+        let major_minor_version = iterator.next().ok_or(InvalidSettingsImportError::InvalidFormat)?;
+
+        if major_minor_version == get_major_minor_version() {
+            let base64 = iterator.next().ok_or(InvalidSettingsImportError::InvalidFormat)?;
+            let bytes = base64::decode(base64).map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
+            let mut result = bincode::deserialize::<'_, Self>(bytes.as_slice()).map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
+            result.prev_equation = String::new();
+            Ok(result)
+        } else {
+            Err(InvalidSettingsImportError::VersionMismatch)
         }
     }
 }
