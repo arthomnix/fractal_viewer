@@ -1,6 +1,6 @@
 [package]
 name = "fractal_viewer"
-version = "0.3.6"
+version = "0.3.7"
 edition = "2021"
 description = "Cross-platform GPU-accelerated viewer for the Mandelbrot set and related fractals"
 repository = "https://github.com/arthomnix/fractal_viewer"
@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 cfg-if = "1"
 winit = "0.27"
-env_logger = "0.9"
+env_logger = "0.10"
 log = "0.4"
 wgpu = "0.14"
 naga = "0.10"
@@ -25,7 +25,7 @@ egui_wgpu_backend = "0.20"
 instant = "0.1"
 bincode = "1.3"
 serde = { version = "1.0", features = [ "derive" ] }
-base64 = "0.13"
+base64 = "0.20"
 url = "2.3"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
