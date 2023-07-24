@@ -5,10 +5,12 @@ use wasm_bindgen::prelude::*;
 use winit::window::Fullscreen;
 
 use egui::Color32;
-use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
 use instant::{Duration, Instant};
 use naga::valid::{Capabilities, ValidationFlags};
 use std::fmt::{Display, Formatter};
+use base64::Engine;
+use base64::engine::general_purpose;
+use egui_wgpu::renderer::ScreenDescriptor;
 use wgpu::util::DeviceExt;
 use wgpu::{Backend, ShaderSource};
 use winit::dpi::PhysicalPosition;
@@ -17,6 +19,8 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
+
+static SHADER: &str = include_str!("shader.wgsl");
 
 #[derive(Debug, serde::Deserialize)]
 enum InvalidSettingsImportError {
@@ -113,7 +117,7 @@ impl UserSettings {
         let mut settings = self.clone();
         settings.prev_equation = String::new();
         let encoded = bincode::serialize(&settings).unwrap();
-        format!("{};{}", get_major_minor_version(), base64::encode(encoded))
+        format!("{};{}", get_major_minor_version(), general_purpose::STANDARD.encode(encoded))
     }
 
     fn import_string(string: &String) -> Result<Self, InvalidSettingsImportError> {
@@ -132,7 +136,7 @@ impl UserSettings {
 
         if major_minor_version == get_major_minor_version() {
             let base64 = iterator.next().ok_or(InvalidSettingsImportError::InvalidFormat)?;
-            let bytes = base64::decode(base64).map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
+            let bytes = general_purpose::STANDARD.decode(base64).map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
             let mut result = bincode::deserialize::<'_, Self>(bytes.as_slice()).map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
             result.prev_equation = String::new();
             Ok(result)
@@ -165,18 +169,21 @@ struct State {
     input_state: InputState,
     egui_state: egui_winit::State,
     context: egui::Context,
-    rpass: RenderPass,
+    egui_renderer: egui_wgpu::Renderer,
     import_error: String,
     #[cfg(not(target_arch = "wasm32"))]
     clipboard: arboard::Clipboard,
 }
 
 impl State {
-    async fn new(window: &Window, ev_loop: &EventLoop<()>) -> Self {
+    async fn new(window: &Window, event_loop: &EventLoop<()>) -> Self {
         let size = window.inner_size();
 
-        let instance = wgpu::Instance::new(wgpu::Backends::all());
-        let surface = unsafe { instance.create_surface(window) };
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            dx12_shader_compiler: Default::default(),
+        });
+        let surface = unsafe { instance.create_surface(window) }.unwrap();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
@@ -196,33 +203,42 @@ impl State {
             Backend::BrowserWebGpu => "WebGPU",
         };
 
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::downlevel_webgl2_defaults(),
-                    label: None,
+        let (device, queue) = adapter.request_device(
+            &wgpu::DeviceDescriptor {
+                features: wgpu::Features::empty(),
+                limits: if cfg!(target_arch = "wasm32") {
+                    wgpu::Limits::downlevel_webgl2_defaults()
+                } else {
+                    wgpu::Limits::default()
                 },
-                None,
-            )
-            .await
-            .unwrap();
+                label: None,
+            },
+            None, // Trace path
+        ).await.unwrap();
+
+        let surface_caps = surface.get_capabilities(&adapter);
+        let surface_format = surface_caps.formats.iter()
+            .copied()
+            .find(|f| f.is_srgb())
+            .unwrap_or(surface_caps.formats[0]);
+
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface.get_supported_formats(&adapter)[0],
+            format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            view_formats: vec![],
         };
 
         surface.configure(&device, &config);
 
-        let egui_state = egui_winit::State::new(ev_loop);
+        let egui_state = egui_winit::State::new(event_loop);
         let context = egui::Context::default();
 
-        let rpass = RenderPass::new(&device, config.format, 1);
+        let egui_renderer = egui_wgpu::Renderer::new(&device, config.format, None, 1);
 
         #[allow(unused_mut)]
         // variable is mutated in wasm but will cause a warning on non-wasm platforms
@@ -245,7 +261,7 @@ impl State {
         {
             settings = UserSettings::import_string(
                 &web_sys::window()
-                    .and_then(|win| Some(win.location().href().unwrap()))
+                    .and_then(|win| win.location().href().ok())
                     .unwrap(),
             )
             .unwrap_or(settings);
@@ -284,7 +300,7 @@ impl State {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("WGSL Shader"),
             source: ShaderSource::Wgsl(
-                include_str!("shader.wgsl")
+                SHADER
                     .replace("REPLACE_FRACTAL_EQN", "cpow(z, 2.0) + c")
                     .into(),
             ),
@@ -353,7 +369,7 @@ impl State {
             },
             egui_state,
             context,
-            rpass,
+            egui_renderer,
             import_error,
             #[cfg(not(target_arch = "wasm32"))]
             clipboard: arboard::Clipboard::new().unwrap(),
@@ -417,8 +433,8 @@ impl State {
     fn update(&mut self) {
         if self.settings.equation != self.settings.prev_equation {
             let shader_src =
-                include_str!("shader.wgsl").replace("REPLACE_FRACTAL_EQN", &self.settings.equation);
-            match naga::front::wgsl::Parser::new().parse(&*shader_src) {
+                SHADER.replace("REPLACE_FRACTAL_EQN", &self.settings.equation);
+            match naga::front::wgsl::Frontend::new().parse(shader_src.as_str()) {
                 Ok(module) => {
                     match naga::valid::Validator::new(ValidationFlags::all(), Capabilities::empty())
                         .validate(&module)
@@ -501,8 +517,7 @@ impl State {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let input = self.egui_state.take_egui_input(window);
-        self.context.begin_frame(input);
+        self.context.begin_frame(self.egui_state.take_egui_input(window));
 
         egui::Window::new(env!("CARGO_PKG_NAME"))
             .title_bar(true)
@@ -575,7 +590,7 @@ impl State {
                 ui.checkbox(&mut self.settings.julia_set, "Julia set");
                 ui.separator();
                 ui.collapsing("Initial value [Right click and drag]", |ui| {
-                    ui.label("Initial value of z [Right click]");
+                    ui.label("Initial value of z");
                     ui.label("(or value of c for Julia sets)");
                     ui.add(egui::DragValue::new(&mut self.settings.initial_value[0]).speed(0.01));
                     ui.add(
@@ -592,7 +607,7 @@ impl State {
                     self.settings.prev_equation = settings_clone.equation;
                     ui.label("Iterative function (WGSL expression)");
                     egui::ComboBox::from_label("Iterative function")
-                        .selected_text(&self.settings.equation)
+                        .selected_text("Select default equation")
                         .show_ui(ui, |ui| {
                             ui.selectable_value(
                                 &mut self.settings.equation,
@@ -616,7 +631,7 @@ impl State {
                                 "Tricorn fractal",
                             );
                         });
-                    ui.label("Custom");
+                    ui.label("...Or edit it yourself!");
                     ui.text_edit_singleline(&mut self.settings.equation);
                     if !settings_clone.equation_valid {
                         ui.colored_label(Color32::RED, "Invalid expression");
@@ -633,25 +648,21 @@ impl State {
                                 .set_text(self.settings.export_string())
                                 .expect("Setting clipboard value failed");
                             #[cfg(target_arch = "wasm32")]
-                            web_sys::window()
-                                .and_then(|win| win.navigator().clipboard())
-                                .and_then(|clipboard| {
-                                    let _ = clipboard.write_text(&self.settings.export_string());
-                                    Some(())
-                                });
+                            if let Some(clipboard) = web_sys::window()
+                                .and_then(|win| win.navigator().clipboard()) {
+                                let _ = clipboard.write_text(&self.settings.export_string());
+                            }
                         }
                         if ui.button("Export link to clipboard").clicked() {
                             #[cfg(not(target_arch = "wasm32"))]
                             self.clipboard
-                                .set_text(format!("https://arthomnix.dev/fractal/?{}", self.settings.export_string()))
+                                .set_text(format!("{}?{}", option_env!("SITE_LINK").unwrap_or("https://arthomnix.dev/fractal/"), self.settings.export_string()))
                                 .expect("Setting clipboard value failed");
                             #[cfg(target_arch = "wasm32")]
-                            web_sys::window()
-                                .and_then(|win| win.navigator().clipboard())
-                                .and_then(|clipboard| {
-                                    let _ = clipboard.write_text(&format!("https://arthomnix.dev/fractal/?{}", self.settings.export_string()));
-                                    Some(())
-                                });
+                            if let Some(clipboard) = web_sys::window()
+                                .and_then(|win| win.navigator().clipboard()) {
+                                let _ = clipboard.write_text(&format!("{}?{}", option_env!("SITE_LINK").unwrap_or("https://arthomnix.dev/fractal/"), self.settings.export_string()));
+                            }
                         }
                         // Reading clipboard doesn't work in Firefox, so we only support importing from link on web
                         #[cfg(not(target_arch = "wasm32"))]
@@ -675,6 +686,9 @@ impl State {
             });
 
         let full_output = self.context.end_frame();
+
+        self.egui_state.handle_platform_output(window, &self.context, full_output.platform_output);
+
         let paint_jobs = self.context.tessellate(full_output.shapes);
 
         let mut encoder = self
@@ -684,22 +698,28 @@ impl State {
             });
 
         let screen_descriptor = ScreenDescriptor {
-            physical_width: self.config.width,
-            physical_height: self.config.height,
-            scale_factor: if cfg!(target_arch = "wasm32") {
+            size_in_pixels: [self.config.width, self.config.height],
+            pixels_per_point: if cfg!(target_arch = "wasm32") {
                 window.scale_factor() as f32
             } else {
                 1.0
             },
         };
 
-        let tdelta = full_output.textures_delta;
+        {
+            for (id, delta) in full_output.textures_delta.set {
+                self.egui_renderer
+                    .update_texture(&self.device, &self.queue, id, &delta);
+            }
 
-        self.rpass
-            .add_textures(&self.device, &self.queue, &tdelta)
-            .expect("Adding egui textures failed");
-        self.rpass
-            .update_buffers(&self.device, &self.queue, &paint_jobs, &screen_descriptor);
+            self.egui_renderer.update_buffers(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                &paint_jobs,
+                &screen_descriptor,
+            )
+        };
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -708,12 +728,7 @@ impl State {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: true,
                     },
                 })],
@@ -724,17 +739,17 @@ impl State {
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             render_pass.draw(0..6, 0..1);
 
-            self.rpass
-                .execute_with_renderpass(&mut render_pass, &paint_jobs, &screen_descriptor)
-                .unwrap();
+            self.egui_renderer
+                .render(&mut render_pass, &paint_jobs, &screen_descriptor);
+        }
+
+        for id in &full_output.textures_delta.free {
+            self.egui_renderer.free_texture(id);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
-        self.rpass
-            .remove_textures(tdelta)
-            .expect("Failed to remove egui textures");
 
         Ok(())
     }
@@ -745,13 +760,21 @@ pub async fn run() {
     cfg_if::cfg_if! {
         if #[cfg(target_arch="wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-            console_log::init_with_level(log::Level::Warn).expect("Couldn't initialise logger");
+            console_log::init_with_level(log::Level::Info).expect("Couldn't initialise logger");
         } else {
             env_logger::init();
         }
     }
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let builder = WindowBuilder::new();
+    #[cfg(target_arch = "wasm32")]
+    let builder = {
+        use winit::platform::web::WindowBuilderExtWebSys;
+
+        builder.with_prevent_default(false)
+               .with_focusable(true)
+    };
+    let window = builder.build(&event_loop).unwrap();
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -779,14 +802,59 @@ pub async fn run() {
 
     let mut last_title_update = Instant::now();
 
+    let mut modifiers_state = ModifiersState::empty();
+
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
             ref event,
             window_id,
         } if window_id == window.id() => {
-            if !state.egui_state.on_event(&state.context, event) && !state.input(event) {
+            // FIXME this will be obsolete whenever winit fixes this issue with web
+            #[cfg(target_arch = "wasm32")]
+            if let WindowEvent::KeyboardInput {
+                    input:
+                    KeyboardInput {
+                        state: pressed,
+                        virtual_keycode: Some(key),
+                        ..
+                    },
+                    ..
+                } = event {
+                match key {
+                    VirtualKeyCode::LAlt |
+                    VirtualKeyCode::RAlt => {
+                        if *pressed == ElementState::Pressed {
+                            modifiers_state |= ModifiersState::ALT;
+                        } else {
+                            modifiers_state -= ModifiersState::ALT;
+                        }
+                        let _ = state.egui_state.on_event(&state.context, &WindowEvent::ModifiersChanged(modifiers_state));
+                    }
+                    VirtualKeyCode::LControl |
+                    VirtualKeyCode::RControl => {
+                        if *pressed == ElementState::Pressed {
+                            modifiers_state |= ModifiersState::CTRL;
+                        } else {
+                            modifiers_state -= ModifiersState::CTRL;
+                        }
+                        let _ = state.egui_state.on_event(&state.context, &WindowEvent::ModifiersChanged(modifiers_state));
+                    }
+                    VirtualKeyCode::LShift |
+                    VirtualKeyCode::RShift => {
+                        if *pressed == ElementState::Pressed {
+                            modifiers_state |= ModifiersState::SHIFT;
+                        } else {
+                            modifiers_state -= ModifiersState::SHIFT;
+                        }
+                        let _ = state.egui_state.on_event(&state.context, &WindowEvent::ModifiersChanged(modifiers_state));
+                    }
+                    _ => {}
+                }
+            }
+
+            if !state.egui_state.on_event(&state.context, event).consumed && !state.input(event) {
                 match event {
-                    WindowEvent::CloseRequested
+                    WindowEvent::CloseRequested /* // note by Madeline Sparkles: this is just terrible UX, also it freezes the whole thing in web.
                     | WindowEvent::KeyboardInput {
                         input:
                             KeyboardInput {
@@ -795,7 +863,7 @@ pub async fn run() {
                                 ..
                             },
                         ..
-                    } => *control_flow = ControlFlow::Exit,
+                    } */ => *control_flow = ControlFlow::Exit,
                     #[cfg(not(target_arch = "wasm32"))]
                     WindowEvent::KeyboardInput {
                         input:
@@ -851,7 +919,7 @@ pub async fn run() {
                         std::env::consts::ARCH,
                         (1.0 / state.prev_frame_time.as_secs_f64())
                     );
-                    window.set_title(&*title);
+                    window.set_title(title.as_str());
                     #[cfg(target_arch = "wasm32")]
                     {
                         web_sys::window()
@@ -864,6 +932,7 @@ pub async fn run() {
                     }
                     last_title_update = Instant::now();
                 }
+
                 state.update();
                 match state.render(&window) {
                     Ok(_) => {}
