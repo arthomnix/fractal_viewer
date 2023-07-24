@@ -5,10 +5,11 @@ use wasm_bindgen::prelude::*;
 use winit::window::Fullscreen;
 
 use egui::Color32;
-use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
+use egui_wgpu::renderer::{Renderer, ScreenDescriptor};
 use instant::{Duration, Instant};
 use naga::valid::{Capabilities, ValidationFlags};
 use std::fmt::{Display, Formatter};
+use base64::Engine;
 use wgpu::util::DeviceExt;
 use wgpu::{Backend, ShaderSource};
 use winit::dpi::PhysicalPosition;
@@ -113,7 +114,7 @@ impl UserSettings {
         let mut settings = self.clone();
         settings.prev_equation = String::new();
         let encoded = bincode::serialize(&settings).unwrap();
-        format!("{};{}", get_major_minor_version(), base64::encode(encoded))
+        format!("{};{}", get_major_minor_version(), base64::engine::general_purpose::STANDARD.encode(encoded))
     }
 
     fn import_string(string: &String) -> Result<Self, InvalidSettingsImportError> {
@@ -132,7 +133,7 @@ impl UserSettings {
 
         if major_minor_version == get_major_minor_version() {
             let base64 = iterator.next().ok_or(InvalidSettingsImportError::InvalidFormat)?;
-            let bytes = base64::decode(base64).map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
+            let bytes = base64::engine::general_purpose::STANDARD.decode(base64).map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
             let mut result = bincode::deserialize::<'_, Self>(bytes.as_slice()).map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
             result.prev_equation = String::new();
             Ok(result)
@@ -165,7 +166,7 @@ struct State {
     input_state: InputState,
     egui_state: egui_winit::State,
     context: egui::Context,
-    rpass: RenderPass,
+    rpass: Renderer,
     import_error: String,
     #[cfg(not(target_arch = "wasm32"))]
     clipboard: arboard::Clipboard,
@@ -175,8 +176,8 @@ impl State {
     async fn new(window: &Window, ev_loop: &EventLoop<()>) -> Self {
         let size = window.inner_size();
 
-        let instance = wgpu::Instance::new(wgpu::Backends::all());
-        let surface = unsafe { instance.create_surface(window) };
+        let instance = wgpu::Instance::new(Default::default());
+        let surface = unsafe { instance.create_surface(window).expect("Failed to create surface") };
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
@@ -210,11 +211,12 @@ impl State {
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface.get_supported_formats(&adapter)[0],
+            format: surface.get_capabilities(&adapter).formats[0],
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            view_formats: vec![],
         };
 
         surface.configure(&device, &config);
@@ -222,7 +224,7 @@ impl State {
         let egui_state = egui_winit::State::new(ev_loop);
         let context = egui::Context::default();
 
-        let rpass = RenderPass::new(&device, config.format, 1);
+        let rpass = Renderer::new(&device, config.format, None, 1);
 
         #[allow(unused_mut)]
         // variable is mutated in wasm but will cause a warning on non-wasm platforms
@@ -418,7 +420,7 @@ impl State {
         if self.settings.equation != self.settings.prev_equation {
             let shader_src =
                 include_str!("shader.wgsl").replace("REPLACE_FRACTAL_EQN", &self.settings.equation);
-            match naga::front::wgsl::Parser::new().parse(&*shader_src) {
+            match naga::front::wgsl::Frontend::new().parse(&shader_src) {
                 Ok(module) => {
                     match naga::valid::Validator::new(ValidationFlags::all(), Capabilities::empty())
                         .validate(&module)
@@ -628,30 +630,10 @@ impl State {
                         .default_open(!self.import_error.is_empty())
                         .show(ui, |ui| {
                         if ui.button("Export to clipboard").clicked() {
-                            #[cfg(not(target_arch = "wasm32"))]
-                            self.clipboard
-                                .set_text(self.settings.export_string())
-                                .expect("Setting clipboard value failed");
-                            #[cfg(target_arch = "wasm32")]
-                            web_sys::window()
-                                .and_then(|win| win.navigator().clipboard())
-                                .and_then(|clipboard| {
-                                    let _ = clipboard.write_text(&self.settings.export_string());
-                                    Some(())
-                                });
+                            ui.output_mut(|o| o.copied_text = self.settings.export_string());
                         }
                         if ui.button("Export link to clipboard").clicked() {
-                            #[cfg(not(target_arch = "wasm32"))]
-                            self.clipboard
-                                .set_text(format!("https://arthomnix.dev/fractal/?{}", self.settings.export_string()))
-                                .expect("Setting clipboard value failed");
-                            #[cfg(target_arch = "wasm32")]
-                            web_sys::window()
-                                .and_then(|win| win.navigator().clipboard())
-                                .and_then(|clipboard| {
-                                    let _ = clipboard.write_text(&format!("https://arthomnix.dev/fractal/?{}", self.settings.export_string()));
-                                    Some(())
-                                });
+                            ui.output_mut(|o| o.copied_text = format!("https://arthomnix.dev/fractal/?{}", self.settings.export_string()));
                         }
                         // Reading clipboard doesn't work in Firefox, so we only support importing from link on web
                         #[cfg(not(target_arch = "wasm32"))]
@@ -675,6 +657,7 @@ impl State {
             });
 
         let full_output = self.context.end_frame();
+        self.egui_state.handle_platform_output(&window, &self.context, full_output.platform_output);
         let paint_jobs = self.context.tessellate(full_output.shapes);
 
         let mut encoder = self
@@ -684,9 +667,8 @@ impl State {
             });
 
         let screen_descriptor = ScreenDescriptor {
-            physical_width: self.config.width,
-            physical_height: self.config.height,
-            scale_factor: if cfg!(target_arch = "wasm32") {
+            size_in_pixels: [self.config.width, self.config.height],
+            pixels_per_point: if cfg!(target_arch = "wasm32") {
                 window.scale_factor() as f32
             } else {
                 1.0
@@ -695,11 +677,10 @@ impl State {
 
         let tdelta = full_output.textures_delta;
 
-        self.rpass
-            .add_textures(&self.device, &self.queue, &tdelta)
-            .expect("Adding egui textures failed");
-        self.rpass
-            .update_buffers(&self.device, &self.queue, &paint_jobs, &screen_descriptor);
+        for (id, delta) in tdelta.set.iter() {
+            self.rpass.update_texture(&self.device, &self.queue, *id, delta);
+        }
+        self.rpass.update_buffers(&self.device, &self.queue, &mut encoder, &paint_jobs, &screen_descriptor);
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -724,17 +705,11 @@ impl State {
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             render_pass.draw(0..6, 0..1);
 
-            self.rpass
-                .execute_with_renderpass(&mut render_pass, &paint_jobs, &screen_descriptor)
-                .unwrap();
+            self.rpass.render(&mut render_pass, &paint_jobs, &screen_descriptor);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
-
-        self.rpass
-            .remove_textures(tdelta)
-            .expect("Failed to remove egui textures");
 
         Ok(())
     }
@@ -784,7 +759,7 @@ pub async fn run() {
             ref event,
             window_id,
         } if window_id == window.id() => {
-            if !state.egui_state.on_event(&state.context, event) && !state.input(event) {
+            if !state.egui_state.on_event(&state.context, event).consumed && !state.input(event) {
                 match event {
                     WindowEvent::CloseRequested
                     | WindowEvent::KeyboardInput {
