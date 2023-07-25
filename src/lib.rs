@@ -6,7 +6,7 @@ use winit::window::Fullscreen;
 
 use base64::engine::general_purpose;
 use base64::Engine;
-use egui::{Color32, RichText};
+use egui::{Color32, RichText, TextEdit};
 use egui_wgpu::renderer::ScreenDescriptor;
 use instant::{Duration, Instant};
 use naga::valid::{Capabilities, ValidationFlags};
@@ -78,7 +78,7 @@ struct Uniforms {
     escape_threshold: f32,
     centre: [f32; 2],
     iterations: i32,
-    julia_set: u32,
+    flags: u32,
     initial_value: [f32; 2],
 }
 
@@ -92,7 +92,7 @@ impl Uniforms {
                 size.height as f32 / 2.0 * scale - settings.centre[1],
             ],
             iterations: settings.iterations,
-            julia_set: settings.julia_set as u32,
+            flags: (settings.smoothen as u32) << 1 | (settings.julia_set as u32),
             initial_value: settings.initial_value,
             escape_threshold: settings.escape_threshold,
         }
@@ -110,12 +110,16 @@ struct UserSettings {
     julia_set: bool,
     initial_value: [f32; 2],
     escape_threshold: f32,
+    smoothen: bool,
+    color: String,
+    prev_color: String,
 }
 
 impl UserSettings {
     fn export_string(&self) -> String {
         let mut settings = self.clone();
         settings.prev_equation = String::new();
+        settings.prev_color = String::new();
         let encoded = bincode::serialize(&settings).unwrap();
         format!(
             "{};{}",
@@ -150,6 +154,7 @@ impl UserSettings {
             let mut result = bincode::deserialize::<'_, Self>(bytes.as_slice())
                 .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
             result.prev_equation = String::new();
+            result.prev_color = String::new();
             Ok(result)
         } else {
             Err(InvalidSettingsImportError::VersionMismatch)
@@ -267,6 +272,9 @@ impl State {
             julia_set: false,
             initial_value: [0.0, 0.0],
             escape_threshold: 2.0,
+            smoothen: true,
+            color: "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))".to_string(),
+            prev_color: "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))".to_string(),
         };
 
         #[allow(unused_mut)]
@@ -315,7 +323,8 @@ impl State {
             label: Some("WGSL Shader"),
             source: ShaderSource::Wgsl(
                 SHADER
-                    .replace("REPLACE_FRACTAL_EQN", "cpow(z, 2.0) + c")
+                    .replace("REPLACE_FRACTAL_EQN", &settings.equation)
+                    .replace("REPLACE_COLOR", &settings.color)
                     .into(),
             ),
         });
@@ -445,8 +454,12 @@ impl State {
     }
 
     fn update(&mut self) {
-        if self.settings.equation != self.settings.prev_equation {
-            let shader_src = SHADER.replace("REPLACE_FRACTAL_EQN", &self.settings.equation);
+        if self.settings.equation != self.settings.prev_equation
+            || self.settings.color != self.settings.prev_color
+        {
+            let shader_src = SHADER
+                .replace("REPLACE_FRACTAL_EQN", &self.settings.equation)
+                .replace("REPLACE_COLOR", &self.settings.color);
             match naga::front::wgsl::Frontend::new().parse(&shader_src) {
                 Ok(module) => {
                     match naga::valid::Validator::new(ValidationFlags::all(), Capabilities::empty())
@@ -505,6 +518,7 @@ impl State {
                                 },
                             );
                             self.settings.prev_equation = self.settings.equation.clone();
+                            self.settings.prev_color = self.settings.color.clone();
                             self.settings.equation_valid = true;
                         }
                         Err(_) => self.settings.equation_valid = false,
@@ -670,11 +684,18 @@ impl State {
                                 );
                             });
                         ui.label("...Or edit it yourself!");
-                        ui.text_edit_singleline(&mut self.settings.equation);
+                        ui.add(TextEdit::singleline(&mut self.settings.equation).desired_width(ui.max_rect().width()));
+                        ui.label("How should the colors be filled in:");
+                        ui.add(TextEdit::singleline(&mut self.settings.color).desired_width(ui.max_rect().width()));
+
                         if !settings_clone.equation_valid {
                             ui.colored_label(Color32::RED, "Invalid expression");
                         }
                     });
+                    {
+                        ui.separator();
+                        ui.checkbox(&mut self.settings.smoothen, "Smoothen");
+                    }
                     {
                         ui.separator();
                         egui::CollapsingHeader::new("Export and import options")
