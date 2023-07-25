@@ -11,6 +11,9 @@ crate-type = ["cdylib", "rlib"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+webgl = [ "wgpu/webgl" ]
+
 [dependencies]
 cfg-if = "1"
 winit = "0.28"
@@ -35,9 +38,8 @@ egui-winit = "0.22"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1"
 console_log = "1.0"
-wgpu = { version = "0.17", features = [ "webgl" ] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = [ "Document", "Window", "Element", "Clipboard", "Navigator", "Location" ] }
+web-sys = { version = "0.3", features = [ "Document", "Window", "Element", "Clipboard", "ClipboardEvent", "DataTransfer", "Navigator", "Location" ] }
 getrandom = { version = "0.2.7", features = [ "js" ] }
-egui-winit = { version = "0.22", default-features = false }
+egui-winit = { version = "0.22", default-features = false, features = [ "links" ] }

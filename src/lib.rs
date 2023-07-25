@@ -1,5 +1,9 @@
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use std::rc::Rc;
+#[cfg(target_arch = "wasm32")]
+use std::cell::{Cell, RefCell};
 
 #[cfg(not(target_arch = "wasm32"))]
 use winit::window::Fullscreen;
@@ -170,6 +174,12 @@ struct State {
     import_error: String,
     #[cfg(not(target_arch = "wasm32"))]
     clipboard: arboard::Clipboard,
+    #[cfg(target_arch = "wasm32")]
+    copy_event: Rc<Cell<bool>>,
+    #[cfg(target_arch = "wasm32")]
+    cut_event: Rc<Cell<bool>>,
+    #[cfg(target_arch = "wasm32")]
+    paste_event: Rc<RefCell<String>>,
 }
 
 impl State {
@@ -334,7 +344,7 @@ impl State {
             multiview: None,
         });
 
-        Self {
+        let state = Self {
             surface,
             device,
             queue,
@@ -359,7 +369,58 @@ impl State {
             import_error,
             #[cfg(not(target_arch = "wasm32"))]
             clipboard: arboard::Clipboard::new().unwrap(),
-        }
+            #[cfg(target_arch = "wasm32")]
+            copy_event: Rc::new(Cell::new(false)),
+            #[cfg(target_arch = "wasm32")]
+            cut_event: Rc::new(Cell::new(false)),
+            #[cfg(target_arch = "wasm32")]
+            paste_event: Rc::new(RefCell::new(Default::default())),
+        };
+
+        #[cfg(target_arch = "wasm32")]
+        web_sys::window().and_then(|window| {
+           window.document().and_then(|document| {
+               {
+                   let event = state.copy_event.clone();
+                   let closure = Closure::<dyn FnMut(_)>::new(move |_: web_sys::ClipboardEvent| {
+                       event.set(true);
+                   });
+                   document
+                       .add_event_listener_with_callback("copy", closure.as_ref().unchecked_ref())
+                       .expect("Failed to add copy event listener");
+                   closure.forget();
+               }
+               {
+                   let event = state.cut_event.clone();
+                   let closure = Closure::<dyn FnMut(_)>::new(move |_: web_sys::ClipboardEvent| {
+                        event.set(true);
+                   });
+                   document
+                       .add_event_listener_with_callback("cut", closure.as_ref().unchecked_ref())
+                       .expect("Failed to add cut event listener");
+                   closure.forget();
+               }
+               {
+                   let event = state.paste_event.clone();
+                   let closure = Closure::<dyn FnMut(_)>::new(move |ev: web_sys::ClipboardEvent| {
+                        if let Some(data) = ev.clipboard_data() {
+                            if let Ok(text) = data.get_data("text/plain") {
+                                if let Ok(mut b) = event.try_borrow_mut() {
+                                    *b = text;
+                                }
+                            }
+                        }
+                   });
+                   document
+                       .add_event_listener_with_callback("paste", closure.as_ref().unchecked_ref())
+                       .expect("Failed to add paste event listener");
+                   closure.forget();
+               }
+               Some(())
+           })
+        });
+
+        state
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -503,7 +564,23 @@ impl State {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let input = self.egui_state.take_egui_input(window);
+        #[allow(unused_mut)]
+        let mut input = self.egui_state.take_egui_input(window);
+        #[cfg(target_arch = "wasm32")]
+        {
+            if self.copy_event.get() {
+                input.events.push(egui::Event::Copy);
+                self.copy_event.set(false);
+            }
+            if self.cut_event.get() {
+                input.events.push(egui::Event::Cut);
+                self.copy_event.set(false);
+            }
+            if let Ok(mut text) = self.paste_event.try_borrow_mut() {
+                input.events.push(egui::Event::Paste(text.clone()));
+                text.clear();
+            }
+        }
         self.context.begin_frame(input);
 
         egui::Window::new(env!("CARGO_PKG_NAME"))
@@ -657,6 +734,12 @@ impl State {
             });
 
         let full_output = self.context.end_frame();
+        #[cfg(target_arch = "wasm32")]
+        {
+            if !full_output.platform_output.copied_text.is_empty() {
+                web_set_clipboard_text(&full_output.platform_output.copied_text);
+            }
+        }
         self.egui_state.handle_platform_output(&window, &self.context, full_output.platform_output);
         let paint_jobs = self.context.tessellate(full_output.shapes);
 
@@ -715,6 +798,22 @@ impl State {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+fn web_set_clipboard_text(s: &str) {
+    if let Some(window) = web_sys::window() {
+        if let Some(clipboard) = window.navigator().clipboard() {
+            let promise = clipboard.write_text(s);
+            let future = wasm_bindgen_futures::JsFuture::from(promise);
+            let future = async move {
+                if let Err(err) = future.await {
+                    log::error!("Copy/cut action failed: {err:?}");
+                }
+            };
+            wasm_bindgen_futures::spawn_local(future);
+        }
+    }
+}
+
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
     cfg_if::cfg_if! {
@@ -725,6 +824,7 @@ pub async fn run() {
             env_logger::init();
         }
     }
+
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 

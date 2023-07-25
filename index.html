@@ -12,11 +12,20 @@
 <body>
 <div id="fractal-viewer"></div>
 <script type="module">
+    if (!window.location.toString().includes("webgpu") && navigator.gpu) {
+        navigator.gpu.requestAdapter().then(v => { if (v != null) window.location = "https://arthomnix.dev/fractal/webgpu" + location.search }, _ => {})
+    }
+
     document.addEventListener('contextmenu', event => event.preventDefault());
     window.addEventListener('scroll', event => event.preventDefault());
 
     import init from "./fractal_viewer.js";
     init().then(() => {
+        document.querySelector("canvas").addEventListener("focus", _ => {
+            document.querySelector("canvas").blur();
+            document.body.focus();
+        });
+        document.body.focus();
         console.log("WASM loaded!");
     });
 </script>
