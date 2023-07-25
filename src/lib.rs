@@ -148,7 +148,7 @@ impl UserSettings {
 
 struct InputState {
     lmb_pressed: bool,
-    rmb_pressed: bool,
+    middle_pressed: bool,
     prev_cursor_pos: PhysicalPosition<f64>,
 }
 
@@ -363,7 +363,7 @@ impl State {
             settings,
             input_state: InputState {
                 lmb_pressed: false,
-                rmb_pressed: false,
+                middle_pressed: false,
                 prev_cursor_pos: PhysicalPosition { x: 0.0, y: 0.0 },
             },
             egui_state,
@@ -399,9 +399,9 @@ impl State {
                     ElementState::Pressed => self.input_state.lmb_pressed = true,
                     ElementState::Released => self.input_state.lmb_pressed = false,
                 },
-                MouseButton::Right => match state {
-                    ElementState::Pressed => self.input_state.rmb_pressed = true,
-                    ElementState::Released => self.input_state.rmb_pressed = false,
+                MouseButton::Middle => match state {
+                    ElementState::Pressed => self.input_state.middle_pressed = true,
+                    ElementState::Released => self.input_state.middle_pressed = false,
                 },
                 _ => {}
             },
@@ -413,7 +413,7 @@ impl State {
                     self.settings.centre[1] -= (position.y - self.input_state.prev_cursor_pos.y)
                         as f32
                         * calculate_scale(&self.size, &self.settings);
-                } else if self.input_state.rmb_pressed {
+                } else if self.input_state.middle_pressed {
                     let scale = calculate_scale(&self.size, &self.settings);
                     self.settings.initial_value = [
                         (position.x as f32 - (self.size.width / 2) as f32) * scale
@@ -589,7 +589,7 @@ impl State {
                 ui.separator();
                 ui.checkbox(&mut self.settings.julia_set, "Julia set");
                 ui.separator();
-                ui.collapsing("Initial value [Right click and drag]", |ui| {
+                ui.collapsing("Initial value [Hold Middle and drag]", |ui| {
                     ui.label("Initial value of z");
                     ui.label("(or value of c for Julia sets)");
                     ui.add(egui::DragValue::new(&mut self.settings.initial_value[0]).speed(0.01));
