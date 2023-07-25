@@ -258,13 +258,12 @@ impl State {
         let mut import_error = String::new();
 
         #[cfg(target_arch = "wasm32")]
-        {
-            settings = UserSettings::import_string(
-                &web_sys::window()
-                    .and_then(|win| win.location().href().ok())
-                    .unwrap(),
-            )
-            .unwrap_or(settings);
+        if let Ok(loaded_settings) = UserSettings::import_string(
+            &web_sys::window()
+                .and_then(|win| win.location().href().ok())
+                .unwrap(),
+        ) {
+            settings = loaded_settings;
         }
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -491,6 +490,7 @@ impl State {
                                     multiview: None,
                                 },
                             );
+                            self.settings.prev_equation = self.settings.equation.clone();
                             self.settings.equation_valid = true;
                         }
                         Err(_) => self.settings.equation_valid = false,
@@ -604,7 +604,6 @@ impl State {
                 });
                 ui.separator();
                 ui.collapsing("Equation", |ui| {
-                    self.settings.prev_equation = settings_clone.equation;
                     ui.label("Iterative function (WGSL expression)");
                     egui::ComboBox::from_label("Iterative function")
                         .selected_text("Select default equation")
@@ -802,6 +801,7 @@ pub async fn run() {
 
     let mut last_title_update = Instant::now();
 
+    #[cfg(target_arch = "wasm32")]
     let mut modifiers_state = ModifiersState::empty();
 
     event_loop.run(move |event, _, control_flow| match event {
