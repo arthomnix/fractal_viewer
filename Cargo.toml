@@ -41,6 +41,6 @@ console_log = "1.0.0"
 wgpu = { version = "0.16.3", features = [ "webgl" ] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = [ "Document", "Window", "Element", "Clipboard", "Navigator", "Location" ] }
+web-sys = { version = "0.3", features = [ "Document", "Window", "Element", "Clipboard", "Navigator", "Location", "Screen" ] }
 getrandom = { version = "0.2.7", features = [ "js" ] }
 egui-winit = { version = "0.22.0", default-features = false }
