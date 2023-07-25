@@ -12,6 +12,7 @@
 <body>
 <div id="fractal-viewer"></div>
 <script type="module">
+    // Mildly janky code to detect WebGPU support
     if (!window.location.toString().includes("webgpu") && navigator.gpu) {
         navigator.gpu.requestAdapter().then(v => { if (v != null) window.location = "https://arthomnix.dev/fractal/webgpu" + location.search }, _ => {})
     }
