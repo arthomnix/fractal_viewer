@@ -457,6 +457,9 @@ impl State {
         if self.settings.equation != self.settings.prev_equation
             || self.settings.color != self.settings.prev_color
         {
+            self.settings.prev_equation = self.settings.equation.clone();
+            self.settings.prev_color = self.settings.color.clone();
+
             let shader_src = SHADER
                 .replace("REPLACE_FRACTAL_EQN", &self.settings.equation)
                 .replace("REPLACE_COLOR", &self.settings.color);
@@ -517,8 +520,6 @@ impl State {
                                     multiview: None,
                                 },
                             );
-                            self.settings.prev_equation = self.settings.equation.clone();
-                            self.settings.prev_color = self.settings.color.clone();
                             self.settings.equation_valid = true;
                         }
                         Err(_) => self.settings.equation_valid = false,
