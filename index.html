@@ -22,11 +22,11 @@
 
     import init from "./fractal_viewer.js";
     init().then(() => {
-        document.querySelector("canvas").addEventListener("focus", _ => {
-            document.querySelector("canvas").blur();
-            document.body.focus();
-        });
-        document.body.focus();
+        //document.querySelector("canvas").addEventListener("focus", _ => {
+        //    document.querySelector("canvas").blur();
+        //    document.body.focus();
+        //});
+        //document.body.focus();
         console.log("WASM loaded!");
     });
 </script>

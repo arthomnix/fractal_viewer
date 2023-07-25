@@ -836,7 +836,15 @@ pub async fn run() {
     }
 
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let builder = WindowBuilder::new();
+    #[cfg(target_arch = "wasm32")]
+        let builder = {
+        use winit::platform::web::WindowBuilderExtWebSys;
+
+        builder.with_prevent_default(false)
+            .with_focusable(true)
+    };
+    let window = builder.build(&event_loop).unwrap();
 
     #[cfg(target_arch = "wasm32")]
     {
