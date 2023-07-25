@@ -434,7 +434,7 @@ impl State {
         if self.settings.equation != self.settings.prev_equation {
             let shader_src =
                 SHADER.replace("REPLACE_FRACTAL_EQN", &self.settings.equation);
-            match naga::front::wgsl::Frontend::new().parse(shader_src.as_str()) {
+            match naga::front::wgsl::Frontend::new().parse(&shader_src) {
                 Ok(module) => {
                     match naga::valid::Validator::new(ValidationFlags::all(), Capabilities::empty())
                         .validate(&module)
@@ -919,7 +919,7 @@ pub async fn run() {
                         std::env::consts::ARCH,
                         (1.0 / state.prev_frame_time.as_secs_f64())
                     );
-                    window.set_title(title.as_str());
+                    window.set_title(&title);
                     #[cfg(target_arch = "wasm32")]
                     {
                         web_sys::window()
