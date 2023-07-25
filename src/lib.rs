@@ -273,8 +273,11 @@ impl State {
             initial_value: [0.0, 0.0],
             escape_threshold: 2.0,
             smoothen: true,
-            color: "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))".to_string(),
-            prev_color: "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))".to_string(),
+            color: "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))"
+                .to_string(),
+            prev_color:
+                "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))"
+                    .to_string(),
         };
 
         #[allow(unused_mut)]
@@ -408,7 +411,7 @@ impl State {
         }
     }
 
-    fn input(&mut self, event: &WindowEvent) -> bool {
+    fn input(&mut self, event: &WindowEvent, fullscreen: bool) -> bool {
         match event {
             WindowEvent::MouseWheel { delta, .. } => {
                 self.settings.zoom += match delta {
@@ -418,7 +421,7 @@ impl State {
                 .max(-0.9)
                     * self.settings.zoom;
             }
-            WindowEvent::MouseInput { state, button, .. } => match button {
+            WindowEvent::MouseInput { state, button, .. } if !fullscreen => match button {
                 MouseButton::Left => match state {
                     ElementState::Pressed => self.input_state.lmb_pressed = true,
                     ElementState::Released => self.input_state.lmb_pressed = false,
@@ -429,7 +432,7 @@ impl State {
                 },
                 _ => {}
             },
-            WindowEvent::CursorMoved { position, .. } => {
+            WindowEvent::CursorMoved { position, .. } if !fullscreen => {
                 if self.input_state.lmb_pressed {
                     self.settings.centre[0] -= (position.x - self.input_state.prev_cursor_pos.x)
                         as f32
@@ -539,7 +542,7 @@ impl State {
         self.last_frame = Instant::now();
     }
 
-    fn render(&mut self, window: &Window) -> Result<(), wgpu::SurfaceError> {
+    fn render(&mut self, window: &Window, fullscreen: bool) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
 
         let view = output
@@ -549,29 +552,7 @@ impl State {
         self.context
             .begin_frame(self.egui_state.take_egui_input(window));
 
-        #[cfg(target_arch = "wasm32")]
-        let web_fullscreen = web_sys::window()
-            .and_then(|win| win.screen().ok().zip(Some(win)))
-            .map(|(screen, win)| {
-                screen.width().ok()
-                    == win
-                        .inner_width()
-                        .ok()
-                        .and_then(|v| v.as_f64())
-                        .map(|v| v as i32)
-                    && screen.height().ok()
-                        == win
-                            .inner_height()
-                            .ok()
-                            .and_then(|v| v.as_f64())
-                            .map(|v| v as i32)
-            })
-            .unwrap_or(false);
-
-        #[cfg(not(target_arch = "wasm32"))]
-        let web_fullscreen = false;
-
-        if !(window.fullscreen().is_some() || web_fullscreen) {
+        if !fullscreen {
             egui::Window::new(env!("CARGO_PKG_NAME"))
                 .title_bar(true)
                 .show(&self.context, |ui| {
@@ -865,64 +846,91 @@ pub async fn run() {
     #[cfg(target_arch = "wasm32")]
     let mut modifiers_state = ModifiersState::empty();
 
-    event_loop.run(move |event, _, control_flow| match event {
-        Event::WindowEvent {
-            ref event,
-            window_id,
-        } if window_id == window.id() => {
-            // FIXME this will be obsolete whenever winit fixes this issue with web
-            #[cfg(target_arch = "wasm32")]
-            if let WindowEvent::KeyboardInput {
-                input:
-                    KeyboardInput {
-                        state: pressed,
-                        virtual_keycode: Some(key),
-                        ..
-                    },
-                ..
-            } = event
-            {
-                match key {
-                    VirtualKeyCode::LAlt | VirtualKeyCode::RAlt => {
-                        if *pressed == ElementState::Pressed {
-                            modifiers_state |= ModifiersState::ALT;
-                        } else {
-                            modifiers_state -= ModifiersState::ALT;
-                        }
-                        let _ = state.egui_state.on_event(
-                            &state.context,
-                            &WindowEvent::ModifiersChanged(modifiers_state),
-                        );
-                    }
-                    VirtualKeyCode::LControl | VirtualKeyCode::RControl => {
-                        if *pressed == ElementState::Pressed {
-                            modifiers_state |= ModifiersState::CTRL;
-                        } else {
-                            modifiers_state -= ModifiersState::CTRL;
-                        }
-                        let _ = state.egui_state.on_event(
-                            &state.context,
-                            &WindowEvent::ModifiersChanged(modifiers_state),
-                        );
-                    }
-                    VirtualKeyCode::LShift | VirtualKeyCode::RShift => {
-                        if *pressed == ElementState::Pressed {
-                            modifiers_state |= ModifiersState::SHIFT;
-                        } else {
-                            modifiers_state -= ModifiersState::SHIFT;
-                        }
-                        let _ = state.egui_state.on_event(
-                            &state.context,
-                            &WindowEvent::ModifiersChanged(modifiers_state),
-                        );
-                    }
-                    _ => {}
-                }
-            }
+    event_loop.run(move |event, _, control_flow| {
+        #[cfg(target_arch = "wasm32")]
+        let web_fullscreen = web_sys::window()
+            .and_then(|win| win.screen().ok().zip(Some(win)))
+            .map(|(screen, win)| {
+                screen.width().ok()
+                    == win
+                        .inner_width()
+                        .ok()
+                        .and_then(|v| v.as_f64())
+                        .map(|v| v as i32)
+                    && screen.height().ok()
+                        == win
+                            .inner_height()
+                            .ok()
+                            .and_then(|v| v.as_f64())
+                            .map(|v| v as i32)
+            })
+            .unwrap_or(false);
 
-            if !state.egui_state.on_event(&state.context, event).consumed && !state.input(event) {
-                match event {
-                    WindowEvent::CloseRequested /* // note by Madeline Sparkles: this is just terrible UX, also it freezes the whole thing in web.
+        #[cfg(not(target_arch = "wasm32"))]
+        let web_fullscreen = false;
+
+        let fullscreen = window.fullscreen().is_some() || web_fullscreen;
+
+        match event {
+            Event::WindowEvent {
+                ref event,
+                window_id,
+            } if window_id == window.id() => {
+                // FIXME this will be obsolete whenever winit fixes this issue with web
+                #[cfg(target_arch = "wasm32")]
+                if let WindowEvent::KeyboardInput {
+                    input:
+                        KeyboardInput {
+                            state: pressed,
+                            virtual_keycode: Some(key),
+                            ..
+                        },
+                    ..
+                } = event
+                {
+                    match key {
+                        VirtualKeyCode::LAlt | VirtualKeyCode::RAlt => {
+                            if *pressed == ElementState::Pressed {
+                                modifiers_state |= ModifiersState::ALT;
+                            } else {
+                                modifiers_state -= ModifiersState::ALT;
+                            }
+                            let _ = state.egui_state.on_event(
+                                &state.context,
+                                &WindowEvent::ModifiersChanged(modifiers_state),
+                            );
+                        }
+                        VirtualKeyCode::LControl | VirtualKeyCode::RControl => {
+                            if *pressed == ElementState::Pressed {
+                                modifiers_state |= ModifiersState::CTRL;
+                            } else {
+                                modifiers_state -= ModifiersState::CTRL;
+                            }
+                            let _ = state.egui_state.on_event(
+                                &state.context,
+                                &WindowEvent::ModifiersChanged(modifiers_state),
+                            );
+                        }
+                        VirtualKeyCode::LShift | VirtualKeyCode::RShift => {
+                            if *pressed == ElementState::Pressed {
+                                modifiers_state |= ModifiersState::SHIFT;
+                            } else {
+                                modifiers_state -= ModifiersState::SHIFT;
+                            }
+                            let _ = state.egui_state.on_event(
+                                &state.context,
+                                &WindowEvent::ModifiersChanged(modifiers_state),
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+
+                if !state.egui_state.on_event(&state.context, event).consumed
+                    && !state.input(event, fullscreen)
+                {
+                    match event {
+                        WindowEvent::CloseRequested /* // note by Madeline Sparkles: this is just terrible UX, also it freezes the whole thing in web.
                     | WindowEvent::KeyboardInput {
                         input:
                             KeyboardInput {
@@ -932,84 +940,85 @@ pub async fn run() {
                             },
                         ..
                     } */ => *control_flow = ControlFlow::Exit,
-                    #[cfg(not(target_arch = "wasm32"))]
-                    WindowEvent::KeyboardInput {
-                        input:
+                        #[cfg(not(target_arch = "wasm32"))]
+                        WindowEvent::KeyboardInput {
+                            input:
                             KeyboardInput {
                                 state: ElementState::Pressed,
                                 virtual_keycode: Some(VirtualKeyCode::F11),
                                 ..
                             },
-                        ..
-                    } => {
-                        if window.fullscreen().is_some() {
-                            window.set_fullscreen(None);
-                        } else {
-                            window.current_monitor().map(|monitor| {
-                                monitor.video_modes().next().map(|mode| {
-                                    window.set_fullscreen(Some(Fullscreen::Exclusive(mode)));
-                                })
-                            });
+                            ..
+                        } => {
+                            if window.fullscreen().is_some() {
+                                window.set_fullscreen(None);
+                            } else {
+                                window.current_monitor().map(|monitor| {
+                                    monitor.video_modes().next().map(|mode| {
+                                        window.set_fullscreen(Some(Fullscreen::Exclusive(mode)));
+                                    })
+                                });
+                            }
                         }
+                        WindowEvent::Resized(physical_size) => state.resize(*physical_size),
+                        WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                            state.resize(**new_inner_size)
+                        }
+                        _ => {}
                     }
-                    WindowEvent::Resized(physical_size) => state.resize(*physical_size),
-                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                        state.resize(**new_inner_size)
-                    }
-                    _ => {}
                 }
             }
-        }
-        Event::MainEventsCleared => window.request_redraw(),
-        Event::RedrawRequested(window_id) => {
-            if window_id == window.id() {
-                #[cfg(target_arch = "wasm32")]
-                {
-                    use winit::dpi::LogicalSize;
-
-                    web_sys::window()
-                        .and_then(|win| {
-                            window.set_inner_size(LogicalSize::new(
-                                win.inner_width().ok()?.as_f64()?,
-                                win.inner_height().ok()?.as_f64()?,
-                            ));
-                            Some(())
-                        })
-                        .expect("Couldn't resize window");
-                }
-
-                if last_title_update.elapsed() >= Duration::from_secs(1) {
-                    let title = format!(
-                        "{} {} [{} | {} | {:.0} FPS]",
-                        env!("CARGO_PKG_NAME"),
-                        env!("CARGO_PKG_VERSION"),
-                        state.backend,
-                        std::env::consts::ARCH,
-                        (1.0 / state.prev_frame_time.as_secs_f64())
-                    );
-                    window.set_title(&title);
+            Event::MainEventsCleared => window.request_redraw(),
+            Event::RedrawRequested(window_id) => {
+                if window_id == window.id() {
                     #[cfg(target_arch = "wasm32")]
                     {
-                        web_sys::window()
-                            .and_then(|win| win.document())
-                            .and_then(|doc| {
-                                let title_element = doc.get_element_by_id("title")?;
-                                title_element.set_inner_html(&title);
-                                Some(())
-                            });
-                    }
-                    last_title_update = Instant::now();
-                }
+                        use winit::dpi::LogicalSize;
 
-                state.update();
-                match state.render(&window) {
-                    Ok(_) => {}
-                    Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                    Err(e) => eprintln!("{:?}", e),
+                        web_sys::window()
+                            .and_then(|win| {
+                                window.set_inner_size(LogicalSize::new(
+                                    win.inner_width().ok()?.as_f64()?,
+                                    win.inner_height().ok()?.as_f64()?,
+                                ));
+                                Some(())
+                            })
+                            .expect("Couldn't resize window");
+                    }
+
+                    if last_title_update.elapsed() >= Duration::from_secs(1) {
+                        let title = format!(
+                            "{} {} [{} | {} | {:.0} FPS]",
+                            env!("CARGO_PKG_NAME"),
+                            env!("CARGO_PKG_VERSION"),
+                            state.backend,
+                            std::env::consts::ARCH,
+                            (1.0 / state.prev_frame_time.as_secs_f64())
+                        );
+                        window.set_title(&title);
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            web_sys::window()
+                                .and_then(|win| win.document())
+                                .and_then(|doc| {
+                                    let title_element = doc.get_element_by_id("title")?;
+                                    title_element.set_inner_html(&title);
+                                    Some(())
+                                });
+                        }
+                        last_title_update = Instant::now();
+                    }
+
+                    state.update();
+                    match state.render(&window, fullscreen) {
+                        Ok(_) => {}
+                        Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
+                        Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                        Err(e) => eprintln!("{:?}", e),
+                    }
                 }
             }
+            _ => {}
         }
-        _ => {}
     });
 }
