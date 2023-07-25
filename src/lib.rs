@@ -731,6 +731,16 @@ impl State {
                         ui.label("To import a settings string on web, add '?<string>' to the end of this page's URL.")
                     });
                 }
+
+                #[cfg(target_arch = "wasm32")]
+                {
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.hyperlink_to("Source code", "https://github.com/arthomnix/fractal_viewer");
+                        ui.label("|");
+                        ui.hyperlink_to("Download desktop version", "https://github.com/arthomnix/fractal_viewer/releases/latest");
+                    })
+                }
             });
 
         let full_output = self.context.end_frame();
