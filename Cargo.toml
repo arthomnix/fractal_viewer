@@ -20,7 +20,7 @@ winit = "0.28.6"
 env_logger = "0.10"
 log = "0.4"
 wgpu = "0.16.3"
-naga = { version = "0.13.0", features = [ "wgsl-in" ] }
+naga = { version = "0.13.0", features = [ "wgsl-in", "validate" ] }
 pollster = "0.3.0"
 bytemuck = { version = "1.12", features = [ "derive" ] }
 egui = "0.22.0"
