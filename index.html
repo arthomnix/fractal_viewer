@@ -18,15 +18,10 @@
     }
 
     document.addEventListener('contextmenu', event => event.preventDefault());
-    //window.addEventListener('scroll', event => event.preventDefault());
+    window.addEventListener('scroll', event => event.preventDefault());
 
     import init from "./fractal_viewer.js";
     init().then(() => {
-        //document.querySelector("canvas").addEventListener("focus", _ => {
-        //    document.querySelector("canvas").blur();
-        //    document.body.focus();
-        //});
-        //document.body.focus();
         console.log("WASM loaded!");
     });
 </script>
