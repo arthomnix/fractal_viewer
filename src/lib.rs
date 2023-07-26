@@ -1,9 +1,5 @@
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
-#[cfg(target_arch = "wasm32")]
-use std::rc::Rc;
-#[cfg(target_arch = "wasm32")]
-use std::cell::{Cell, RefCell};
 
 #[cfg(not(target_arch = "wasm32"))]
 use winit::window::Fullscreen;
@@ -191,14 +187,9 @@ struct State {
     context: egui::Context,
     egui_renderer: egui_wgpu::Renderer,
     import_error: String,
+    hide_ui: bool,
     #[cfg(not(target_arch = "wasm32"))]
     clipboard: arboard::Clipboard,
-    #[cfg(target_arch = "wasm32")]
-    copy_event: Rc<Cell<bool>>,
-    #[cfg(target_arch = "wasm32")]
-    cut_event: Rc<Cell<bool>>,
-    #[cfg(target_arch = "wasm32")]
-    paste_event: Rc<RefCell<String>>,
 }
 
 impl State {
@@ -381,7 +372,7 @@ impl State {
             multiview: None,
         });
 
-        let state = Self {
+        Self {
             surface,
             device,
             queue,
@@ -404,60 +395,10 @@ impl State {
             context,
             egui_renderer,
             import_error,
+            hide_ui: false,
             #[cfg(not(target_arch = "wasm32"))]
             clipboard: arboard::Clipboard::new().unwrap(),
-            #[cfg(target_arch = "wasm32")]
-            copy_event: Rc::new(Cell::new(false)),
-            #[cfg(target_arch = "wasm32")]
-            cut_event: Rc::new(Cell::new(false)),
-            #[cfg(target_arch = "wasm32")]
-            paste_event: Rc::new(RefCell::new(Default::default())),
-        };
-
-        #[cfg(target_arch = "wasm32")]
-        web_sys::window().and_then(|window| {
-           window.document().and_then(|document| {
-               {
-                   let event = state.copy_event.clone();
-                   let closure = Closure::<dyn FnMut(_)>::new(move |_: web_sys::ClipboardEvent| {
-                       event.set(true);
-                   });
-                   document
-                       .add_event_listener_with_callback("copy", closure.as_ref().unchecked_ref())
-                       .expect("Failed to add copy event listener");
-                   closure.forget();
-               }
-               {
-                   let event = state.cut_event.clone();
-                   let closure = Closure::<dyn FnMut(_)>::new(move |_: web_sys::ClipboardEvent| {
-                        event.set(true);
-                   });
-                   document
-                       .add_event_listener_with_callback("cut", closure.as_ref().unchecked_ref())
-                       .expect("Failed to add cut event listener");
-                   closure.forget();
-               }
-               {
-                   let event = state.paste_event.clone();
-                   let closure = Closure::<dyn FnMut(_)>::new(move |ev: web_sys::ClipboardEvent| {
-                        if let Some(data) = ev.clipboard_data() {
-                            if let Ok(text) = data.get_data("text/plain") {
-                                if let Ok(mut b) = event.try_borrow_mut() {
-                                    *b = text;
-                                }
-                            }
-                        }
-                   });
-                   document
-                       .add_event_listener_with_callback("paste", closure.as_ref().unchecked_ref())
-                       .expect("Failed to add paste event listener");
-                   closure.forget();
-               }
-               Some(())
-           })
-        });
-
-        state
+        }
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -600,193 +541,184 @@ impl State {
         self.last_frame = Instant::now();
     }
 
-    fn render(&mut self, window: &Window, fullscreen: bool) -> Result<(), wgpu::SurfaceError> {
+    fn render(&mut self, window: &Window) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
 
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        #[allow(unused_mut)]
-        let mut input = self.egui_state.take_egui_input(window);
-        #[cfg(target_arch = "wasm32")]
-        {
-            if self.copy_event.get() {
-                input.events.push(egui::Event::Copy);
-                self.copy_event.set(false);
-            }
-            if self.cut_event.get() {
-                input.events.push(egui::Event::Cut);
-                self.copy_event.set(false);
-            }
-            if let Ok(mut text) = self.paste_event.try_borrow_mut() {
-                input.events.push(egui::Event::Paste(text.clone()));
-                text.clear();
-            }
-        }
-        self.context.begin_frame(input);
+        self.context.begin_frame(self.egui_state.take_egui_input(window));
 
-        egui::Window::new(env!("CARGO_PKG_NAME"))
-            .title_bar(true)
-            .show(&self.context, |ui| {
-                egui::trace!(ui);
+        if !self.hide_ui {
+            egui::Window::new(env!("CARGO_PKG_NAME"))
+                .title_bar(true)
+                .show(&self.context, |ui| {
+                    egui::trace!(ui);
 
-                ui.label(format!(
-                    "Version {} ({}{}{})",
-                    env!("CARGO_PKG_VERSION"),
-                    std::env::consts::OS,
-                    if std::env::consts::OS.is_empty() {
-                        ""
-                    } else {
-                        " "
-                    },
-                    std::env::consts::ARCH
-                ));
-                ui.label(format!("Render backend: {}", self.backend));
-                ui.label(format!(
-                    "Last frame: {:.1}ms ({:.0} FPS)",
-                    self.prev_frame_time.as_micros() as f64 / 1000.0,
-                    1.0 / self.prev_frame_time.as_secs_f64()
-                ));
-                #[cfg(not(target_arch = "wasm32"))]
-                ui.label("Fullscreen: [F11]");
-                ui.separator();
+                    ui.heading(RichText::new("<Press F1 to toggle this UI!>").color(Color32::YELLOW));
 
-                let settings_clone = self.settings.clone();
-
-                ui.collapsing("Zoom [Scroll]", |ui| {
-                    ui.label("Zoom");
-                    ui.add(
-                        egui::Slider::new(&mut self.settings.zoom, 0.0..=100000.0)
-                            .logarithmic(true),
-                    );
-                });
-                ui.separator();
-                ui.collapsing("Iterations", |ui| {
-                    ui.label("Iterations");
-                    ui.add(
-                        egui::Slider::new(&mut self.settings.iterations, 1..=10000)
-                            .logarithmic(true),
-                    );
-                    ui.label("Escape threshold");
-                    ui.add(
-                        egui::Slider::new(
-                            &mut self.settings.escape_threshold,
-                            1.0..=13043817825300000000.0,
-                        ) // approximate square root of maximum f32
-                        .logarithmic(true),
-                    );
-                });
-                ui.separator();
-                ui.collapsing("Centre [Click and drag to pan]", |ui| {
-                    ui.label("Centre");
-                    ui.add(
-                        egui::DragValue::new(&mut self.settings.centre[0])
-                            .speed(0.1 / settings_clone.zoom),
-                    );
-                    ui.add(
-                        egui::DragValue::new(&mut self.settings.centre[1])
-                            .speed(0.1 / settings_clone.zoom)
-                            .suffix("i"),
-                    );
-                    if ui.button("Reset").clicked() {
-                        self.settings.centre = [0.0, 0.0];
-                    }
-                });
-                ui.separator();
-                ui.checkbox(&mut self.settings.julia_set, "Julia set");
-                ui.separator();
-                ui.collapsing("Initial value [Right click and drag]", |ui| {
-                    ui.label("Initial value of z [Right click]");
-                    ui.label("(or value of c for Julia sets)");
-                    ui.add(egui::DragValue::new(&mut self.settings.initial_value[0]).speed(0.01));
-                    ui.add(
-                        egui::DragValue::new(&mut self.settings.initial_value[1])
-                            .speed(0.01)
-                            .suffix("i"),
-                    );
-                    if ui.button("Reset").clicked() {
-                        self.settings.initial_value = [0.0, 0.0];
-                    }
-                });
-                ui.separator();
-                ui.collapsing("Equation", |ui| {
-                    ui.label("Iterative function (WGSL expression)");
-                    egui::ComboBox::from_label("Iterative function")
-                        .selected_text("Select default equation")
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.settings.equation,
-                                "csquare(z) + c".to_string(),
-                                "Mandelbrot set",
-                            );
-                            ui.selectable_value(
-                                &mut self.settings.equation,
-                                "csquare(abs(z)) + c".to_string(),
-                                "Burning ship fractal",
-                            );
-                            ui.selectable_value(
-                                &mut self.settings.equation,
-                                "cdiv(cmul(csquare(z), z), vec2<f32>(1.0, 0.0) + z * z) + c"
-                                    .to_string(),
-                                "Feather fractal",
-                            );
-                            ui.selectable_value(
-                                &mut self.settings.equation,
-                                "csquare(vec2<f32>(z.x, -z.y)) + c".to_string(),
-                                "Tricorn fractal",
-                            );
-                        });
-                    ui.label("...Or edit it yourself!");
-                    ui.add(TextEdit::singleline(&mut self.settings.equation).desired_width(ui.max_rect().width()));
-                    ui.label("How should the colors be filled in:");
-                    ui.add(TextEdit::singleline(&mut self.settings.color).desired_width(ui.max_rect().width()));
-
-                    if !settings_clone.equation_valid {
-                        ui.colored_label(Color32::RED, "Invalid expression");
-                    }
-                });
-                {
+                    ui.label(format!(
+                        "Version {} ({}{}{})",
+                        env!("CARGO_PKG_VERSION"),
+                        std::env::consts::OS,
+                        if std::env::consts::OS.is_empty() {
+                            ""
+                        } else {
+                            " "
+                        },
+                        std::env::consts::ARCH
+                    ));
+                    ui.label(format!("Render backend: {}", self.backend));
+                    ui.label(format!(
+                        "Last frame: {:.1}ms ({:.0} FPS)",
+                        self.prev_frame_time.as_micros() as f64 / 1000.0,
+                        1.0 / self.prev_frame_time.as_secs_f64()
+                    ));
+                    #[cfg(not(target_arch = "wasm32"))]
+                    ui.label("Fullscreen: [F11]");
                     ui.separator();
-                    egui::CollapsingHeader::new("Export and import options")
-                        .default_open(!self.import_error.is_empty())
-                        .show(ui, |ui| {
-                        if ui.button("Export to clipboard").clicked() {
-                            ui.output_mut(|o| o.copied_text = self.settings.export_string());
-                        }
-                        if ui.button("Export link to clipboard").clicked() {
-                            ui.output_mut(|o| o.copied_text = format!("https://arthomnix.dev/fractal/?{}", self.settings.export_string()));
-                        }
-                        // Reading clipboard doesn't work in Firefox, so we only support importing from link on web
-                        #[cfg(not(target_arch = "wasm32"))]
-                        if ui.button("Import from clipboard").clicked() {
-                            let text = self.clipboard.get_text().unwrap_or_default();
-                            match UserSettings::import_string(&text) {
-                                Ok(settings) => {
-                                    self.settings = settings;
-                                    self.import_error = String::new();
-                                }
-                                Err(e) => self.import_error = format!("{e}"),
-                            };
-                        }
-                        if !&self.import_error.is_empty() {
-                            ui.colored_label(Color32::RED, format!("Import failed: {}", self.import_error));
-                        }
-                        #[cfg(target_arch = "wasm32")]
-                        ui.label("To import a settings string on web, add '?<string>' to the end of this page's URL.")
+
+                    let settings_clone = self.settings.clone();
+
+                    ui.collapsing("Zoom [Scroll]", |ui| {
+                        ui.label("Zoom");
+                        ui.add(
+                            egui::Slider::new(&mut self.settings.zoom, 0.0..=100000.0)
+                                .logarithmic(true),
+                        );
                     });
-                }
-
-                #[cfg(target_arch = "wasm32")]
-                {
                     ui.separator();
-                    ui.horizontal(|ui| {
-                        ui.hyperlink_to("Source code", "https://github.com/arthomnix/fractal_viewer");
-                        ui.label("|");
-                        ui.hyperlink_to("Download desktop version", "https://github.com/arthomnix/fractal_viewer/releases/latest");
-                    })
-                }
-            });
+                    ui.collapsing("Iterations", |ui| {
+                        ui.label("Iterations");
+                        ui.add(
+                            egui::Slider::new(&mut self.settings.iterations, 1..=10000)
+                                .logarithmic(true),
+                        );
+                        ui.label("Escape threshold");
+                        ui.add(
+                            egui::Slider::new(
+                                &mut self.settings.escape_threshold,
+                                1.0..=13043817825300000000.0,
+                            ) // approximate square root of maximum f32
+                                .logarithmic(true),
+                        );
+                    });
+                    ui.separator();
+                    ui.collapsing("Centre [Click and drag to pan]", |ui| {
+                        ui.label("Centre");
+                        ui.add(
+                            egui::DragValue::new(&mut self.settings.centre[0])
+                                .speed(0.1 / settings_clone.zoom),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut self.settings.centre[1])
+                                .speed(0.1 / settings_clone.zoom)
+                                .suffix("i"),
+                        );
+                        if ui.button("Reset").clicked() {
+                            self.settings.centre = [0.0, 0.0];
+                        }
+                    });
+                    ui.separator();
+                    ui.checkbox(&mut self.settings.julia_set, "Julia set");
+                    ui.separator();
+                    ui.collapsing("Initial value [Right click and drag]", |ui| {
+                        ui.label("Initial value of z [Right click]");
+                        ui.label("(or value of c for Julia sets)");
+                        ui.add(egui::DragValue::new(&mut self.settings.initial_value[0]).speed(0.01));
+                        ui.add(
+                            egui::DragValue::new(&mut self.settings.initial_value[1])
+                                .speed(0.01)
+                                .suffix("i"),
+                        );
+                        if ui.button("Reset").clicked() {
+                            self.settings.initial_value = [0.0, 0.0];
+                        }
+                    });
+                    ui.separator();
+                    ui.collapsing("Equation", |ui| {
+                        ui.label("Iterative function (WGSL expression)");
+                        egui::ComboBox::from_label("Iterative function")
+                            .selected_text("Select default equation")
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut self.settings.equation,
+                                    "csquare(z) + c".to_string(),
+                                    "Mandelbrot set",
+                                );
+                                ui.selectable_value(
+                                    &mut self.settings.equation,
+                                    "csquare(abs(z)) + c".to_string(),
+                                    "Burning ship fractal",
+                                );
+                                ui.selectable_value(
+                                    &mut self.settings.equation,
+                                    "cdiv(cmul(csquare(z), z), vec2<f32>(1.0, 0.0) + z * z) + c"
+                                        .to_string(),
+                                    "Feather fractal",
+                                );
+                                ui.selectable_value(
+                                    &mut self.settings.equation,
+                                    "csquare(vec2<f32>(z.x, -z.y)) + c".to_string(),
+                                    "Tricorn fractal",
+                                );
+                            });
+                        ui.label("...Or edit it yourself!");
+                        ui.add(TextEdit::singleline(&mut self.settings.equation).desired_width(ui.max_rect().width()));
+                        ui.label("How should the colors be filled in:");
+                        ui.add(TextEdit::singleline(&mut self.settings.color).desired_width(ui.max_rect().width()));
+
+                        if !settings_clone.equation_valid {
+                            ui.colored_label(Color32::RED, "Invalid expression");
+                        }
+                    });
+                    {
+                        ui.separator();
+                        ui.checkbox(&mut self.settings.smoothen, "Smoothen");
+                    }
+                    {
+                        ui.separator();
+                        egui::CollapsingHeader::new("Export and import options")
+                            .default_open(!self.import_error.is_empty())
+                            .show(ui, |ui| {
+                                if ui.button("Export to clipboard").clicked() {
+                                    ui.output_mut(|o| o.copied_text = self.settings.export_string());
+                                }
+                                if ui.button("Export link to clipboard").clicked() {
+                                    ui.output_mut(|o| o.copied_text = format!("{}?{}", option_env!("SITE_LINK").unwrap_or("https://arthomnix.dev/fractal/"), self.settings.export_string()));
+                                }
+                                // Reading clipboard doesn't work in Firefox, so we only support importing from link on web
+                                #[cfg(not(target_arch = "wasm32"))]
+                                if ui.button("Import from clipboard").clicked() {
+                                    let text = self.clipboard.get_text().unwrap_or_default();
+                                    match UserSettings::import_string(&text) {
+                                        Ok(settings) => {
+                                            self.settings = settings;
+                                            self.import_error = String::new();
+                                        }
+                                        Err(e) => self.import_error = format!("{e}"),
+                                    };
+                                }
+                                if !&self.import_error.is_empty() {
+                                    ui.colored_label(Color32::RED, format!("Import failed: {}", self.import_error));
+                                }
+                                #[cfg(target_arch = "wasm32")]
+                                ui.label("To import a settings string on web, add '?<string>' to the end of this page's URL.")
+                            });
+                    }
+
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        ui.separator();
+                        ui.horizontal(|ui| {
+                            ui.hyperlink_to("Source code", "https://github.com/arthomnix/fractal_viewer");
+                            ui.label("|");
+                            ui.hyperlink_to("Download desktop version", "https://github.com/arthomnix/fractal_viewer/releases/latest");
+                        })
+                    }
+                });
+        }
 
         let full_output = self.context.end_frame();
         #[cfg(target_arch = "wasm32")]
@@ -795,7 +727,8 @@ impl State {
                 web_set_clipboard_text(&full_output.platform_output.copied_text);
             }
         }
-        self.egui_state.handle_platform_output(&window, &self.context, full_output.platform_output);
+        self.egui_state
+            .handle_platform_output(window, &self.context, full_output.platform_output);
         let paint_jobs = self.context.tessellate(full_output.shapes);
 
         let mut encoder = self
@@ -1007,7 +940,12 @@ pub async fn run() {
                     }
                 }
 
-                if !state.egui_state.on_event(&state.context, event).consumed
+                let mut egui_consumed = false;
+                if !fullscreen {
+                    egui_consumed = state.egui_state.on_event(&state.context, event).consumed;
+                }
+
+                if !egui_consumed
                     && !state.input(event, fullscreen)
                 {
                     match event {
@@ -1040,6 +978,17 @@ pub async fn run() {
                                     })
                                 });
                             }
+                        }
+                        WindowEvent::KeyboardInput {
+                            input:
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::F1),
+                                ..
+                            },
+                            ..
+                        } => {
+                            state.hide_ui = !state.hide_ui;
                         }
                         WindowEvent::Resized(physical_size) => state.resize(*physical_size),
                         WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
@@ -1091,7 +1040,7 @@ pub async fn run() {
                     }
 
                     state.update();
-                    match state.render(&window, fullscreen) {
+                    match state.render(&window) {
                         Ok(_) => {}
                         Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
                         Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
