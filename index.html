@@ -17,8 +17,8 @@
         navigator.gpu.requestAdapter().then(v => { if (v != null) window.location = location.href + "/webgpu" + location.search }, _ => {})
     }
 
-    document.addEventListener('contextmenu', event => event.preventDefault());
-    window.addEventListener('scroll', event => event.preventDefault());
+    //document.addEventListener('contextmenu', event => event.preventDefault());
+    //window.addEventListener('scroll', event => event.preventDefault());
 
     import init from "./fractal_viewer.js";
     init().then(() => {
