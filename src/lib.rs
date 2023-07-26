@@ -1,4 +1,8 @@
 #[cfg(target_arch = "wasm32")]
+use std::cell::RefCell;
+#[cfg(target_arch = "wasm32")]
+use std::rc::Rc;
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -6,7 +10,7 @@ use winit::window::Fullscreen;
 
 use base64::engine::general_purpose;
 use base64::Engine;
-use egui::{Color32, RichText, TextEdit};
+use egui::{Color32, PlatformOutput, RichText, TextEdit};
 use egui_wgpu::renderer::ScreenDescriptor;
 use instant::{Duration, Instant};
 use naga::valid::{Capabilities, ValidationFlags};
@@ -190,6 +194,8 @@ struct State {
     hide_ui: bool,
     #[cfg(not(target_arch = "wasm32"))]
     clipboard: arboard::Clipboard,
+    #[cfg(target_arch = "wasm32")]
+    paste_event: Rc<RefCell<String>>,
 }
 
 impl State {
@@ -372,6 +378,28 @@ impl State {
             multiview: None,
         });
 
+        let paste_event = Rc::new(RefCell::new(Default::default()));
+
+        #[cfg(target_arch = "wasm32")]
+        web_sys::window().and_then(|window| {
+            window.document().map(|document| {
+                let event = paste_event.clone();
+                let closure = Closure::<dyn FnMut(_)>::new(move |ev: web_sys::ClipboardEvent| {
+                    if let Some(data) = ev.clipboard_data() {
+                        if let Ok(text) = data.get_data("text/plain") {
+                            if let Ok(mut b) = event.try_borrow_mut() {
+                                *b = text;
+                            }
+                        }
+                    }
+                });
+                document
+                    .add_event_listener_with_callback("paste", closure.as_ref().unchecked_ref())
+                    .expect("Failed to add paste event listener");
+                closure.forget();
+            })
+        });
+
         Self {
             surface,
             device,
@@ -398,6 +426,7 @@ impl State {
             hide_ui: false,
             #[cfg(not(target_arch = "wasm32"))]
             clipboard: arboard::Clipboard::new().unwrap(),
+            paste_event,
         }
     }
 
@@ -548,7 +577,8 @@ impl State {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        self.context.begin_frame(self.egui_state.take_egui_input(window));
+        self.context
+            .begin_frame(self.egui_state.take_egui_input(window));
 
         if !self.hide_ui {
             egui::Window::new(env!("CARGO_PKG_NAME"))
@@ -862,6 +892,20 @@ pub async fn run() {
 
     event_loop.run(move |event, _, control_flow| {
         #[cfg(target_arch = "wasm32")]
+        if let Ok(mut s) = state.paste_event.try_borrow_mut() {
+            if !s.is_empty() {
+                state.egui_state.handle_platform_output(
+                    &window,
+                    &state.context,
+                    PlatformOutput {
+                        copied_text: core::mem::take(&mut *s),
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+
+        #[cfg(target_arch = "wasm32")]
         let web_fullscreen = web_sys::window()
             .and_then(|win| win.screen().ok().zip(Some(win)))
             .map(|(screen, win)| {
@@ -945,9 +989,7 @@ pub async fn run() {
                     egui_consumed = state.egui_state.on_event(&state.context, event).consumed;
                 }
 
-                if !egui_consumed
-                    && !state.input(event, fullscreen)
-                {
+                if !egui_consumed && !state.input(event, fullscreen) {
                     match event {
                         WindowEvent::CloseRequested /* // note by Madeline Sparkles: this is just terrible UX, also it freezes the whole thing in web.
                     | WindowEvent::KeyboardInput {
