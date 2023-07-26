@@ -36,14 +36,14 @@ url = "2.3"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 arboard = { version = "3.1", features = [ "wayland-data-control" ] }
-egui-winit = "0.22.0"
+egui-winit = { version = "0.22.0", features = [ "links" ] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1"
 console_log = "1.0.0"
-wgpu = { version = "0.16.3" }
+wgpu = "0.16.3"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = [ "Document", "Window", "Element", "Clipboard", "Navigator", "Location", "Screen" ] }
+web-sys = { version = "0.3", features = [ "Document", "Window", "Element", "Clipboard", "Navigator", "Location", "Screen", "ClipboardEvent", "DataTransfer" ] }
 getrandom = { version = "0.2.7", features = [ "js" ] }
-egui-winit = { version = "0.22.0", default-features = false }
+egui-winit = { version = "0.22.0", default-features = false, features = [ "links" ] }
