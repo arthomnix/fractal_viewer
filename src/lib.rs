@@ -7,10 +7,12 @@ use wasm_bindgen::prelude::*;
 
 #[cfg(not(target_arch = "wasm32"))]
 use winit::window::Fullscreen;
+#[cfg(target_arch = "wasm32")]
+use egui::PlatformOutput;
 
 use base64::engine::general_purpose;
 use base64::Engine;
-use egui::{Color32, PlatformOutput, RichText, TextEdit};
+use egui::{Color32, RichText, TextEdit};
 use egui_wgpu::renderer::ScreenDescriptor;
 use instant::{Duration, Instant};
 use naga::valid::{Capabilities, ValidationFlags};
@@ -378,6 +380,7 @@ impl State {
             multiview: None,
         });
 
+        #[cfg(target_arch = "wasm32")]
         let paste_event = Rc::new(RefCell::new(Default::default()));
 
         #[cfg(target_arch = "wasm32")]
@@ -426,6 +429,7 @@ impl State {
             hide_ui: false,
             #[cfg(not(target_arch = "wasm32"))]
             clipboard: arboard::Clipboard::new().unwrap(),
+            #[cfg(target_arch = "wasm32")]
             paste_event,
         }
     }
