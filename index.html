@@ -14,7 +14,7 @@
 <script type="module">
     // Mildly janky code to detect WebGPU support
     if (!window.location.toString().includes("webgpu") && navigator.gpu) {
-        navigator.gpu.requestAdapter().then(v => { if (v != null) window.location = location.href + "/webgpu" + location.search }, _ => {})
+        navigator.gpu.requestAdapter().then(v => { if (v != null) window.location = location.href.split("?")[0] + "/webgpu" + location.search }, _ => {})
     }
 
     document.addEventListener('contextmenu', event => event.preventDefault());
