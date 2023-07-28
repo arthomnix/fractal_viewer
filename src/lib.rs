@@ -1,3 +1,5 @@
+mod compat;
+
 #[cfg(target_arch = "wasm32")]
 use std::cell::RefCell;
 #[cfg(target_arch = "wasm32")]
@@ -116,13 +118,13 @@ struct UserSettings {
     iterations: i32,
     equation: String,
     prev_equation: String,
-    equation_valid: bool,
-    julia_set: bool,
-    initial_value: [f32; 2],
-    escape_threshold: f32,
-    smoothen: bool,
     colour: String,
     prev_colour: String,
+    equation_valid: bool,
+    julia_set: bool,
+    smoothen: bool,
+    initial_value: [f32; 2],
+    escape_threshold: f32,
 }
 
 impl UserSettings {
@@ -138,7 +140,7 @@ impl UserSettings {
         )
     }
 
-    fn import_string(string: &String) -> Result<Self, InvalidSettingsImportError> {
+    fn import_string(string: &str) -> Result<Self, InvalidSettingsImportError> {
         let string = match url::Url::parse(string) {
             Ok(url) => url.query().unwrap_or_default().to_string(),
             Err(_) => string.to_string(),
@@ -154,10 +156,11 @@ impl UserSettings {
             .next()
             .ok_or(InvalidSettingsImportError::InvalidFormat)?;
 
+        let base64 = iterator
+            .next()
+            .ok_or(InvalidSettingsImportError::InvalidFormat)?;
+
         if major_minor_version == get_major_minor_version() {
-            let base64 = iterator
-                .next()
-                .ok_or(InvalidSettingsImportError::InvalidFormat)?;
             let bytes = general_purpose::STANDARD
                 .decode(base64)
                 .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
@@ -167,7 +170,10 @@ impl UserSettings {
             result.prev_colour = String::new();
             Ok(result)
         } else {
-            Err(InvalidSettingsImportError::VersionMismatch)
+            match major_minor_version {
+                "0.3" => Ok(compat::v0_3::UserSettings::import_string(base64)?.into()),
+                _ => Err(InvalidSettingsImportError::VersionMismatch),
+            }
         }
     }
 }
@@ -290,16 +296,16 @@ impl State {
             iterations: 100,
             equation: "csquare(z) + c".to_string(),
             prev_equation: "csquare(z) + c".to_string(),
-            equation_valid: true,
-            julia_set: false,
-            initial_value: [0.0, 0.0],
-            escape_threshold: 2.0,
-            smoothen: true,
             colour: "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))"
                 .to_string(),
             prev_colour:
-                "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))"
-                    .to_string(),
+            "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))"
+                .to_string(),
+            equation_valid: true,
+            julia_set: false,
+            smoothen: false,
+            initial_value: [0.0, 0.0],
+            escape_threshold: 2.0,
         };
 
         #[allow(unused_mut)]
@@ -776,7 +782,7 @@ impl State {
                     
                     {
                         ui.separator();
-                        ui.checkbox(&mut self.settings.smoothen, "Smoothen");
+                        ui.checkbox(&mut self.settings.smoothen, "Smoothen (warning: only produces correct results on a normal Mandelbrot set!)");
                     }
                     {
                         ui.separator();
