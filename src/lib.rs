@@ -768,8 +768,13 @@ impl State {
                             });
                         ui.label("...Or edit it yourself!");
                         ui.add(TextEdit::singleline(&mut self.settings.equation).desired_width(ui.max_rect().width()));
-                        ui.label("Colour equation:");
-                        ui.add(TextEdit::singleline(&mut self.settings.colour).desired_width(ui.max_rect().width()));
+                        ui.label("Colour expression:");
+                        ui.horizontal(|ui| {
+                            ui.text_edit_singleline(&mut self.settings.colour);
+                            if ui.button("Reset").clicked() {
+                                self.settings.colour = "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))".to_string();
+                            }
+                        });
                         ui.checkbox(&mut self.settings.internal_black, "Always colour inside of set black");
 
                         if !settings_clone.equation_valid {
