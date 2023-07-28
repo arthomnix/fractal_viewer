@@ -98,7 +98,7 @@ impl Uniforms {
                 size.height as f32 / 2.0 * scale - settings.centre[1],
             ],
             iterations: settings.iterations,
-            flags: (settings.smoothen as u32) << 1 | (settings.julia_set as u32),
+            flags: (settings.internal_black as u32) << 2 | (settings.smoothen as u32) << 1 | (settings.julia_set as u32),
             initial_value: settings.initial_value,
             escape_threshold: settings.escape_threshold,
         }
@@ -117,6 +117,7 @@ struct UserSettings {
     equation_valid: bool,
     julia_set: bool,
     smoothen: bool,
+    internal_black: bool,
     initial_value: [f32; 2],
     escape_threshold: f32,
 }
@@ -298,6 +299,7 @@ impl State {
             equation_valid: true,
             julia_set: false,
             smoothen: false,
+            internal_black: true,
             initial_value: [0.0, 0.0],
             escape_threshold: 2.0,
         };
@@ -768,6 +770,7 @@ impl State {
                         ui.add(TextEdit::singleline(&mut self.settings.equation).desired_width(ui.max_rect().width()));
                         ui.label("Colour equation:");
                         ui.add(TextEdit::singleline(&mut self.settings.colour).desired_width(ui.max_rect().width()));
+                        ui.checkbox(&mut self.settings.internal_black, "Always colour inside of set black");
 
                         if !settings_clone.equation_valid {
                             ui.colored_label(Color32::RED, "Invalid expression");

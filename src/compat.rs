@@ -39,6 +39,7 @@ pub(crate) mod v0_3 {
                 equation_valid: self.equation_valid,
                 julia_set: self.julia_set,
                 smoothen: false,
+                internal_black: true,
                 initial_value: self.initial_value,
                 escape_threshold: self.escape_threshold,
             }

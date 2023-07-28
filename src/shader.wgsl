@@ -9,6 +9,7 @@ struct Uniforms {
 
 const JULIA_SET = 1u;
 const SMOOTHEN = 2u;
+const INTERNAL_BLACK = 4u;
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
@@ -98,7 +99,11 @@ fn get_fragment_colour(c: vec2<f32>) -> vec4<f32> {
         ) {
             i++;
             if (i == uniforms.iterations) {
-                return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+                if ((uniforms.flags & INTERNAL_BLACK) != 0u) {
+                    return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+                } else {
+                    break;
+                }
             }
         }
     } else {
@@ -110,7 +115,11 @@ fn get_fragment_colour(c: vec2<f32>) -> vec4<f32> {
         ) {
             i++;
             if (i == uniforms.iterations) {
-                return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+                if ((uniforms.flags & INTERNAL_BLACK) != 0u) {
+                    return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+                } else {
+                    break;
+                }
             }
         }
     }
