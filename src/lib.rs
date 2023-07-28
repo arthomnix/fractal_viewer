@@ -16,7 +16,7 @@ use egui::PlatformOutput;
 
 use base64::engine::general_purpose;
 use base64::Engine;
-use egui::{Color32, RichText, TextEdit};
+use egui::{Color32, TextEdit};
 use egui_wgpu::renderer::{Renderer, ScreenDescriptor};
 use instant::{Duration, Instant};
 use naga::valid::{Capabilities, ValidationFlags};
@@ -656,8 +656,6 @@ impl State {
                 .show(&self.context, |ui| {
                     egui::trace!(ui);
 
-                    ui.heading(RichText::new("<Press F1 to toggle this UI!>").color(Color32::YELLOW));
-
                     ui.label(format!(
                         "Version {} ({}{}{})",
                         env!("CARGO_PKG_VERSION"),
@@ -677,6 +675,8 @@ impl State {
                     ));
                     #[cfg(not(target_arch = "wasm32"))]
                     ui.label("Fullscreen: [F11]");
+
+                    ui.label("Toggle UI: [F1]");
                     ui.separator();
 
                     let settings_clone = self.settings.clone();
