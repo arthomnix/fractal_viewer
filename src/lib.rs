@@ -1,10 +1,6 @@
 mod compat;
 
 #[cfg(target_arch = "wasm32")]
-use std::cell::RefCell;
-#[cfg(target_arch = "wasm32")]
-use std::rc::Rc;
-#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use std::rc::Rc;
@@ -13,8 +9,6 @@ use std::cell::{Cell, RefCell};
 
 #[cfg(not(target_arch = "wasm32"))]
 use winit::window::Fullscreen;
-#[cfg(target_arch = "wasm32")]
-use egui::PlatformOutput;
 
 use base64::engine::general_purpose;
 use base64::Engine;
@@ -403,12 +397,12 @@ impl State {
         });
 
         #[cfg(target_arch = "wasm32")]
-        {
-            let copy_event = Rc::new(Cell::new(false));
-            let cut_event = Rc::new(Cell::new(false));
-            let paste_event = Rc::new(RefCell::new(Default::default()));
-        }
-            
+        let copy_event = Rc::new(Cell::new(false));
+        #[cfg(target_arch = "wasm32")]
+        let cut_event = Rc::new(Cell::new(false));
+        #[cfg(target_arch = "wasm32")]
+        let paste_event = Rc::new(RefCell::new(Default::default()));
+
         #[cfg(target_arch = "wasm32")]
         web_sys::window().and_then(|window| {
             window.document().map(|document| {
