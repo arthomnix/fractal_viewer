@@ -491,7 +491,7 @@ impl State {
         }
     }
 
-    fn input(&mut self, event: &WindowEvent, fullscreen: bool) -> bool {
+    fn input(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::MouseWheel { delta, .. } => {
                 self.settings.zoom += match delta {
@@ -501,7 +501,7 @@ impl State {
                 .max(-0.9)
                     * self.settings.zoom;
             }
-            WindowEvent::MouseInput { state, button, .. } if !fullscreen => match button {
+            WindowEvent::MouseInput { state, button, .. } => match button {
                 MouseButton::Left => match state {
                     ElementState::Pressed => self.input_state.lmb_pressed = true,
                     ElementState::Released => self.input_state.lmb_pressed = false,
@@ -512,7 +512,7 @@ impl State {
                 },
                 _ => {}
             },
-            WindowEvent::CursorMoved { position, .. } if !fullscreen => {
+            WindowEvent::CursorMoved { position, .. } => {
                 if self.input_state.lmb_pressed {
                     self.settings.centre[0] -= (position.x - self.input_state.prev_cursor_pos.x)
                         as f32
@@ -963,30 +963,6 @@ pub async fn run() {
     let mut modifiers_state = ModifiersState::empty();
 
     event_loop.run(move |event, _, control_flow| {
-        #[cfg(target_arch = "wasm32")]
-        let web_fullscreen = web_sys::window()
-            .and_then(|win| win.screen().ok().zip(Some(win)))
-            .map(|(screen, win)| {
-                screen.width().ok()
-                    == win
-                        .inner_width()
-                        .ok()
-                        .and_then(|v| v.as_f64())
-                        .map(|v| v as i32)
-                    && screen.height().ok()
-                        == win
-                            .inner_height()
-                            .ok()
-                            .and_then(|v| v.as_f64())
-                            .map(|v| v as i32)
-            })
-            .unwrap_or(false);
-
-        #[cfg(not(target_arch = "wasm32"))]
-        let web_fullscreen = false;
-
-        let fullscreen = window.fullscreen().is_some() || web_fullscreen;
-
         match event {
             Event::WindowEvent {
                 ref event,
@@ -1042,12 +1018,9 @@ pub async fn run() {
                     }
                 }
 
-                let mut egui_consumed = false;
-                if !fullscreen {
-                    egui_consumed = state.egui_state.on_event(&state.context, event).consumed;
-                }
+                let egui_consumed = state.egui_state.on_event(&state.context, event).consumed;
 
-                if !egui_consumed && !state.input(event, fullscreen) {
+                if !egui_consumed && !state.input(event) {
                     match event {
                         WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                         #[cfg(not(target_arch = "wasm32"))]
