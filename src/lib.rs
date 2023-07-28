@@ -219,14 +219,30 @@ impl State {
             .await
             .unwrap();
 
+        let surface_caps = surface.get_capabilities(&adapter);
+        let surface_format = surface_caps
+            .formats
+            .iter()
+            .copied()
+            .find(|f| f.is_srgb())
+            .unwrap_or(surface_caps.formats[0]);
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface.get_capabilities(&adapter).formats[0],
+            format: if cfg!(feature = "webgl") {
+                surface_format
+            } else {
+                surface_format.remove_srgb_suffix()
+            },
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            view_formats: vec![],
+            view_formats: if cfg!(feature = "webgl") {
+                vec![] // using view formats on the WebGL backend causes a panic
+            } else {
+                vec![surface_format.add_srgb_suffix()]
+            },
         };
 
         surface.configure(&device, &config);
@@ -234,7 +250,7 @@ impl State {
         let egui_state = egui_winit::State::new(ev_loop);
         let context = egui::Context::default();
 
-        let rpass = Renderer::new(&device, config.format, None, 1);
+        let rpass = Renderer::new(&device, config.format.add_srgb_suffix(), None, 1);
 
         #[allow(unused_mut)]
         // variable is mutated in wasm but will cause a warning on non-wasm platforms
@@ -321,7 +337,7 @@ impl State {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: config.format.add_srgb_suffix(),
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -515,7 +531,7 @@ impl State {
                                         module: &shader,
                                         entry_point: "fs_main",
                                         targets: &[Some(wgpu::ColorTargetState {
-                                            format: self.config.format,
+                                            format: self.config.format.add_srgb_suffix(),
                                             blend: Some(wgpu::BlendState::REPLACE),
                                             write_mask: wgpu::ColorWrites::ALL,
                                         })],
@@ -562,7 +578,10 @@ impl State {
 
         let view = output
             .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+            .create_view(&wgpu::TextureViewDescriptor {
+                format: Some(self.config.format.add_srgb_suffix()),
+                ..Default::default()
+            });
 
         #[allow(unused_mut)]
         let mut input = self.egui_state.take_egui_input(window);
