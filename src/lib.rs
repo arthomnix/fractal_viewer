@@ -4,6 +4,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use std::rc::Rc;
+#[cfg(target_arch = "wasm32")]
+use std::cell::{Cell, RefCell};
 
 #[cfg(not(target_arch = "wasm32"))]
 use winit::window::Fullscreen;
@@ -13,10 +17,11 @@ use egui::PlatformOutput;
 use base64::engine::general_purpose;
 use base64::Engine;
 use egui::{Color32, RichText, TextEdit};
-use egui_wgpu::renderer::ScreenDescriptor;
+use egui_wgpu::renderer::{Renderer, ScreenDescriptor};
 use instant::{Duration, Instant};
 use naga::valid::{Capabilities, ValidationFlags};
 use std::fmt::{Display, Formatter};
+use base64::Engine;
 use wgpu::util::DeviceExt;
 use wgpu::{Backend, ShaderSource};
 use winit::dpi::PhysicalPosition;
@@ -191,11 +196,15 @@ struct State {
     input_state: InputState,
     egui_state: egui_winit::State,
     context: egui::Context,
-    egui_renderer: egui_wgpu::Renderer,
+    egui_renderer: Renderer,
     import_error: String,
     hide_ui: bool,
     #[cfg(not(target_arch = "wasm32"))]
     clipboard: arboard::Clipboard,
+    #[cfg(target_arch = "wasm32")]
+    copy_event: Rc<Cell<bool>>,
+    #[cfg(target_arch = "wasm32")]
+    cut_event: Rc<Cell<bool>>,
     #[cfg(target_arch = "wasm32")]
     paste_event: Rc<RefCell<String>>,
 }
@@ -251,12 +260,20 @@ impl State {
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format,
+            format: if cfg!(feature = "webgl") {
+                surface_format
+            } else {
+                surface_format.remove_srgb_suffix()
+            },
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            view_formats: vec![],
+            view_formats: if cfg!(feature = "webgl") {
+                vec![] // using view formats on the WebGL backend causes a panic
+            } else {
+                vec![surface_format.add_srgb_suffix()]
+            },
         };
 
         surface.configure(&device, &config);
@@ -264,7 +281,7 @@ impl State {
         let egui_state = egui_winit::State::new(event_loop);
         let context = egui::Context::default();
 
-        let egui_renderer = egui_wgpu::Renderer::new(&device, config.format, None, 1);
+        let egui_renderer = Renderer::new(&device, config.format.add_srgb_suffix(), None, 1);
 
         #[allow(unused_mut)]
         // variable is mutated in wasm but will cause a warning on non-wasm platforms
@@ -357,7 +374,7 @@ impl State {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: config.format.add_srgb_suffix(),
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -381,25 +398,51 @@ impl State {
         });
 
         #[cfg(target_arch = "wasm32")]
-        let paste_event = Rc::new(RefCell::new(Default::default()));
-
+        {
+            let copy_event = Rc::new(Cell::new(false));
+            let cut_event = Rc::new(Cell::new(false));
+            let paste_event = Rc::new(RefCell::new(Default::default()));
+        }
+            
         #[cfg(target_arch = "wasm32")]
         web_sys::window().and_then(|window| {
             window.document().map(|document| {
-                let event = paste_event.clone();
-                let closure = Closure::<dyn FnMut(_)>::new(move |ev: web_sys::ClipboardEvent| {
-                    if let Some(data) = ev.clipboard_data() {
-                        if let Ok(text) = data.get_data("text/plain") {
-                            if let Ok(mut b) = event.try_borrow_mut() {
-                                *b = text;
+               {
+                   let event = copy_event.clone();
+                   let closure = Closure::<dyn FnMut(_)>::new(move |_: web_sys::ClipboardEvent| {
+                       event.set(true);
+                   });
+                   document
+                       .add_event_listener_with_callback("copy", closure.as_ref().unchecked_ref())
+                       .expect("Failed to add copy event listener");
+                   closure.forget();
+               }
+               {
+                   let event = cut_event.clone();
+                   let closure = Closure::<dyn FnMut(_)>::new(move |_: web_sys::ClipboardEvent| {
+                        event.set(true);
+                   });
+                   document
+                       .add_event_listener_with_callback("cut", closure.as_ref().unchecked_ref())
+                       .expect("Failed to add cut event listener");
+                   closure.forget();
+               }
+               {
+                   let event = paste_event.clone();
+                   let closure = Closure::<dyn FnMut(_)>::new(move |ev: web_sys::ClipboardEvent| {
+                        if let Some(data) = ev.clipboard_data() {
+                            if let Ok(text) = data.get_data("text/plain") {
+                                if let Ok(mut b) = event.try_borrow_mut() {
+                                    *b = text;
+                                }
                             }
                         }
-                    }
-                });
-                document
-                    .add_event_listener_with_callback("paste", closure.as_ref().unchecked_ref())
-                    .expect("Failed to add paste event listener");
-                closure.forget();
+                   });
+                   document
+                       .add_event_listener_with_callback("paste", closure.as_ref().unchecked_ref())
+                       .expect("Failed to add paste event listener");
+                   closure.forget();
+               }
             })
         });
 
@@ -429,6 +472,10 @@ impl State {
             hide_ui: false,
             #[cfg(not(target_arch = "wasm32"))]
             clipboard: arboard::Clipboard::new().unwrap(),
+            #[cfg(target_arch = "wasm32")]
+            copy_event,
+            #[cfg(target_arch = "wasm32")]
+            cut_event,
             #[cfg(target_arch = "wasm32")]
             paste_event,
         }
@@ -498,6 +545,7 @@ impl State {
             let shader_src = SHADER
                 .replace("REPLACE_FRACTAL_EQN", &self.settings.equation)
                 .replace("REPLACE_COLOR", &self.settings.color);
+
             match naga::front::wgsl::Frontend::new().parse(&shader_src) {
                 Ok(module) => {
                     match naga::valid::Validator::new(ValidationFlags::all(), Capabilities::empty())
@@ -532,7 +580,7 @@ impl State {
                                         module: &shader,
                                         entry_point: "fs_main",
                                         targets: &[Some(wgpu::ColorTargetState {
-                                            format: self.config.format,
+                                            format: self.config.format.add_srgb_suffix(),
                                             blend: Some(wgpu::BlendState::REPLACE),
                                             write_mask: wgpu::ColorWrites::ALL,
                                         })],
@@ -579,10 +627,29 @@ impl State {
 
         let view = output
             .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+            .create_view(&wgpu::TextureViewDescriptor {
+                format: Some(self.config.format.add_srgb_suffix()),
+                ..Default::default()
+            });
 
-        self.context
-            .begin_frame(self.egui_state.take_egui_input(window));
+        #[allow(unused_mut)]
+        let mut input = self.egui_state.take_egui_input(window);
+        #[cfg(target_arch = "wasm32")]
+        {
+            if self.copy_event.get() {
+                input.events.push(egui::Event::Copy);
+                self.copy_event.set(false);
+            }
+            if self.cut_event.get() {
+                input.events.push(egui::Event::Cut);
+                self.copy_event.set(false);
+            }
+            if let Ok(mut text) = self.paste_event.try_borrow_mut() {
+                input.events.push(egui::Event::Paste(text.clone()));
+                text.clear();
+            }
+        }
+        self.context.begin_frame(input);
 
         if !self.hide_ui {
             egui::Window::new(env!("CARGO_PKG_NAME"))
@@ -707,6 +774,7 @@ impl State {
                             ui.colored_label(Color32::RED, "Invalid expression");
                         }
                     });
+                    
                     {
                         ui.separator();
                         ui.checkbox(&mut self.settings.smoothen, "Smoothen");
@@ -761,8 +829,8 @@ impl State {
                 web_set_clipboard_text(&full_output.platform_output.copied_text);
             }
         }
-        self.egui_state
-            .handle_platform_output(window, &self.context, full_output.platform_output);
+
+        self.egui_state.handle_platform_output(&window, &self.context, full_output.platform_output);
         let paint_jobs = self.context.tessellate(full_output.shapes);
 
         let mut encoder = self
@@ -782,10 +850,9 @@ impl State {
 
         {
             for (id, delta) in full_output.textures_delta.set {
-                self.egui_renderer
-                    .update_texture(&self.device, &self.queue, id, &delta);
+                self.egui_renderer.update_texture(&self.device, &self.queue, id, &delta);
             }
-
+          
             self.egui_renderer.update_buffers(
                 &self.device,
                 &self.queue,
@@ -813,8 +880,7 @@ impl State {
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             render_pass.draw(0..6, 0..1);
 
-            self.egui_renderer
-                .render(&mut render_pass, &paint_jobs, &screen_descriptor);
+            self.egui_renderer.render(&mut render_pass, &paint_jobs, &screen_descriptor);
         }
 
         for id in &full_output.textures_delta.free {
@@ -895,20 +961,6 @@ pub async fn run() {
     let mut modifiers_state = ModifiersState::empty();
 
     event_loop.run(move |event, _, control_flow| {
-        #[cfg(target_arch = "wasm32")]
-        if let Ok(mut s) = state.paste_event.try_borrow_mut() {
-            if !s.is_empty() {
-                state.egui_state.handle_platform_output(
-                    &window,
-                    &state.context,
-                    PlatformOutput {
-                        copied_text: core::mem::take(&mut *s),
-                        ..Default::default()
-                    },
-                );
-            }
-        }
-
         #[cfg(target_arch = "wasm32")]
         let web_fullscreen = web_sys::window()
             .and_then(|win| win.screen().ok().zip(Some(win)))
