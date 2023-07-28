@@ -816,9 +816,9 @@ impl State {
                     {
                         ui.separator();
                         ui.horizontal(|ui| {
-                            ui.hyperlink_to("Source code", "https://github.com/arthomnix/fractal_viewer");
+                            ui.hyperlink_to("Source code", option_env!("SOURCE_LINK").unwrap_or("https://github.com/arthomnix/fractal_viewer"));
                             ui.label("|");
-                            ui.hyperlink_to("Download desktop version", "https://github.com/arthomnix/fractal_viewer/releases/latest");
+                            ui.hyperlink_to("Download desktop version", option_env!("DL_LINK").unwrap_or("https://github.com/arthomnix/fractal_viewer/releases/latest"));
                         })
                     }
                 });
