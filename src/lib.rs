@@ -121,15 +121,15 @@ struct UserSettings {
     initial_value: [f32; 2],
     escape_threshold: f32,
     smoothen: bool,
-    color: String,
-    prev_color: String,
+    colour: String,
+    prev_colour: String,
 }
 
 impl UserSettings {
     fn export_string(&self) -> String {
         let mut settings = self.clone();
         settings.prev_equation = String::new();
-        settings.prev_color = String::new();
+        settings.prev_colour = String::new();
         let encoded = bincode::serialize(&settings).unwrap();
         format!(
             "{};{}",
@@ -164,7 +164,7 @@ impl UserSettings {
             let mut result = bincode::deserialize::<'_, Self>(bytes.as_slice())
                 .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
             result.prev_equation = String::new();
-            result.prev_color = String::new();
+            result.prev_colour = String::new();
             Ok(result)
         } else {
             Err(InvalidSettingsImportError::VersionMismatch)
@@ -295,9 +295,9 @@ impl State {
             initial_value: [0.0, 0.0],
             escape_threshold: 2.0,
             smoothen: true,
-            color: "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))"
+            colour: "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))"
                 .to_string(),
-            prev_color:
+            prev_colour:
                 "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))"
                     .to_string(),
         };
@@ -349,7 +349,7 @@ impl State {
             source: ShaderSource::Wgsl(
                 SHADER
                     .replace("REPLACE_FRACTAL_EQN", &settings.equation)
-                    .replace("REPLACE_COLOR", &settings.color)
+                    .replace("REPLACE_COLOR", &settings.colour)
                     .into(),
             ),
         });
@@ -536,14 +536,14 @@ impl State {
 
     fn update(&mut self) {
         if self.settings.equation != self.settings.prev_equation
-            || self.settings.color != self.settings.prev_color
+            || self.settings.colour != self.settings.prev_colour
         {
             self.settings.prev_equation = self.settings.equation.clone();
-            self.settings.prev_color = self.settings.color.clone();
+            self.settings.prev_colour = self.settings.colour.clone();
 
             let shader_src = SHADER
                 .replace("REPLACE_FRACTAL_EQN", &self.settings.equation)
-                .replace("REPLACE_COLOR", &self.settings.color);
+                .replace("REPLACE_COLOR", &self.settings.colour);
 
             match naga::front::wgsl::Frontend::new().parse(&shader_src) {
                 Ok(module) => {
@@ -766,8 +766,8 @@ impl State {
                             });
                         ui.label("...Or edit it yourself!");
                         ui.add(TextEdit::singleline(&mut self.settings.equation).desired_width(ui.max_rect().width()));
-                        ui.label("How should the colors be filled in:");
-                        ui.add(TextEdit::singleline(&mut self.settings.color).desired_width(ui.max_rect().width()));
+                        ui.label("Colour equation:");
+                        ui.add(TextEdit::singleline(&mut self.settings.colour).desired_width(ui.max_rect().width()));
 
                         if !settings_clone.equation_valid {
                             ui.colored_label(Color32::RED, "Invalid expression");
