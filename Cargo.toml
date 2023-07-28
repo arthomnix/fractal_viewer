@@ -1,18 +1,21 @@
 [package]
 name = "fractal_viewer"
-version = "0.3.8"
+version = "0.4.0"
 edition = "2021"
 description = "Cross-platform GPU-accelerated viewer for the Mandelbrot set and related fractals"
 repository = "https://github.com/arthomnix/fractal_viewer"
 license = "MIT"
 
-[lib]
-crate-type = ["cdylib", "rlib"]
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "fractal_viewer_bin"
 
 [features]
 webgl = [ "wgpu/webgl" ]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 cfg-if = "1"
@@ -20,7 +23,7 @@ winit = "0.28"
 env_logger = "0.10"
 log = "0.4"
 wgpu = "0.16"
-naga = { version = "0.13", features = [ "wgsl-in" ] }
+naga = { version = "0.13", features = [ "wgsl-in", "validate" ] }
 pollster = "0.3"
 bytemuck = { version = "1.12", features = [ "derive" ] }
 egui = "0.22"
@@ -38,8 +41,9 @@ egui-winit = "0.22"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1"
 console_log = "1.0"
+wgpu = "0.16"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = [ "Document", "Window", "Element", "Clipboard", "ClipboardEvent", "DataTransfer", "Navigator", "Location" ] }
-getrandom = { version = "0.2.7", features = [ "js" ] }
+web-sys = { version = "0.3", features = [ "Document", "Window", "Element", "Clipboard", "ClipboardEvent", "DataTransfer", "Navigator", "Location", "Screen" ] }
+getrandom = { version = "0.2", features = [ "js" ] }
 egui-winit = { version = "0.22", default-features = false, features = [ "links" ] }

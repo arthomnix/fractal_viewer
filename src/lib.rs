@@ -1,4 +1,8 @@
 #[cfg(target_arch = "wasm32")]
+use std::cell::RefCell;
+#[cfg(target_arch = "wasm32")]
+use std::rc::Rc;
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use std::rc::Rc;
@@ -7,8 +11,12 @@ use std::cell::{Cell, RefCell};
 
 #[cfg(not(target_arch = "wasm32"))]
 use winit::window::Fullscreen;
+#[cfg(target_arch = "wasm32")]
+use egui::PlatformOutput;
 
-use egui::Color32;
+use base64::engine::general_purpose;
+use base64::Engine;
+use egui::{Color32, RichText, TextEdit};
 use egui_wgpu::renderer::{Renderer, ScreenDescriptor};
 use instant::{Duration, Instant};
 use naga::valid::{Capabilities, ValidationFlags};
@@ -22,6 +30,8 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
+
+static SHADER: &str = include_str!("shader.wgsl");
 
 #[derive(Debug, serde::Deserialize)]
 enum InvalidSettingsImportError {
@@ -79,7 +89,7 @@ struct Uniforms {
     escape_threshold: f32,
     centre: [f32; 2],
     iterations: i32,
-    julia_set: u32,
+    flags: u32,
     initial_value: [f32; 2],
 }
 
@@ -93,7 +103,7 @@ impl Uniforms {
                 size.height as f32 / 2.0 * scale - settings.centre[1],
             ],
             iterations: settings.iterations,
-            julia_set: settings.julia_set as u32,
+            flags: (settings.smoothen as u32) << 1 | (settings.julia_set as u32),
             initial_value: settings.initial_value,
             escape_threshold: settings.escape_threshold,
         }
@@ -111,14 +121,22 @@ struct UserSettings {
     julia_set: bool,
     initial_value: [f32; 2],
     escape_threshold: f32,
+    smoothen: bool,
+    color: String,
+    prev_color: String,
 }
 
 impl UserSettings {
     fn export_string(&self) -> String {
         let mut settings = self.clone();
         settings.prev_equation = String::new();
+        settings.prev_color = String::new();
         let encoded = bincode::serialize(&settings).unwrap();
-        format!("{};{}", get_major_minor_version(), base64::engine::general_purpose::STANDARD.encode(encoded))
+        format!(
+            "{};{}",
+            get_major_minor_version(),
+            general_purpose::STANDARD.encode(encoded)
+        )
     }
 
     fn import_string(string: &String) -> Result<Self, InvalidSettingsImportError> {
@@ -133,13 +151,21 @@ impl UserSettings {
 
         let mut iterator = string.split(';');
 
-        let major_minor_version = iterator.next().ok_or(InvalidSettingsImportError::InvalidFormat)?;
+        let major_minor_version = iterator
+            .next()
+            .ok_or(InvalidSettingsImportError::InvalidFormat)?;
 
         if major_minor_version == get_major_minor_version() {
-            let base64 = iterator.next().ok_or(InvalidSettingsImportError::InvalidFormat)?;
-            let bytes = base64::engine::general_purpose::STANDARD.decode(base64).map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
-            let mut result = bincode::deserialize::<'_, Self>(bytes.as_slice()).map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
+            let base64 = iterator
+                .next()
+                .ok_or(InvalidSettingsImportError::InvalidFormat)?;
+            let bytes = general_purpose::STANDARD
+                .decode(base64)
+                .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
+            let mut result = bincode::deserialize::<'_, Self>(bytes.as_slice())
+                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
             result.prev_equation = String::new();
+            result.prev_color = String::new();
             Ok(result)
         } else {
             Err(InvalidSettingsImportError::VersionMismatch)
@@ -170,8 +196,9 @@ struct State {
     input_state: InputState,
     egui_state: egui_winit::State,
     context: egui::Context,
-    rpass: Renderer,
+    egui_renderer: Renderer,
     import_error: String,
+    hide_ui: bool,
     #[cfg(not(target_arch = "wasm32"))]
     clipboard: arboard::Clipboard,
     #[cfg(target_arch = "wasm32")]
@@ -183,11 +210,11 @@ struct State {
 }
 
 impl State {
-    async fn new(window: &Window, ev_loop: &EventLoop<()>) -> Self {
+    async fn new(window: &Window, event_loop: &EventLoop<()>) -> Self {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(Default::default());
-        let surface = unsafe { instance.create_surface(window).expect("Failed to create surface") };
+        let surface = unsafe { instance.create_surface(window) }.expect("Failed to create surface");
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
@@ -203,7 +230,7 @@ impl State {
             Backend::Metal => "Metal",
             Backend::Dx12 => "DirectX 12",
             Backend::Dx11 => "DirectX 11",
-            Backend::Gl => "WebGL",
+            Backend::Gl => "OpenGL",
             Backend::BrowserWebGpu => "WebGPU",
         };
 
@@ -211,7 +238,11 @@ impl State {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                    limits: if cfg!(feature = "webgl") {
+                        wgpu::Limits::downlevel_webgl2_defaults()
+                    } else {
+                        wgpu::Limits::default()
+                    },
                     label: None,
                 },
                 None,
@@ -236,7 +267,7 @@ impl State {
             },
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: if cfg!(feature = "webgl") {
                 vec![] // using view formats on the WebGL backend causes a panic
@@ -247,10 +278,10 @@ impl State {
 
         surface.configure(&device, &config);
 
-        let egui_state = egui_winit::State::new(ev_loop);
+        let egui_state = egui_winit::State::new(event_loop);
         let context = egui::Context::default();
 
-        let rpass = Renderer::new(&device, config.format.add_srgb_suffix(), None, 1);
+        let egui_renderer = Renderer::new(&device, config.format.add_srgb_suffix(), None, 1);
 
         #[allow(unused_mut)]
         // variable is mutated in wasm but will cause a warning on non-wasm platforms
@@ -264,19 +295,24 @@ impl State {
             julia_set: false,
             initial_value: [0.0, 0.0],
             escape_threshold: 2.0,
+            smoothen: true,
+            color: "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))"
+                .to_string(),
+            prev_color:
+                "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))"
+                    .to_string(),
         };
 
         #[allow(unused_mut)]
         let mut import_error = String::new();
 
         #[cfg(target_arch = "wasm32")]
-        {
-            settings = UserSettings::import_string(
-                &web_sys::window()
-                    .and_then(|win| Some(win.location().href().unwrap()))
-                    .unwrap(),
-            )
-            .unwrap_or(settings);
+        if let Ok(loaded_settings) = UserSettings::import_string(
+            &web_sys::window()
+                .and_then(|win| win.location().href().ok())
+                .unwrap(),
+        ) {
+            settings = loaded_settings;
         }
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -312,8 +348,9 @@ impl State {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("WGSL Shader"),
             source: ShaderSource::Wgsl(
-                include_str!("shader.wgsl")
-                    .replace("REPLACE_FRACTAL_EQN", "cpow(z, 2.0) + c")
+                SHADER
+                    .replace("REPLACE_FRACTAL_EQN", &settings.equation)
+                    .replace("REPLACE_COLOR", &settings.color)
                     .into(),
             ),
         });
@@ -360,7 +397,56 @@ impl State {
             multiview: None,
         });
 
-        let state = Self {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let copy_event = Rc::new(Cell::new(false));
+            let cut_event = Rc::new(Cell::new(false));
+            let paste_event = Rc::new(RefCell::new(Default::default()));
+        }
+            
+        #[cfg(target_arch = "wasm32")]
+        web_sys::window().and_then(|window| {
+            window.document().map(|document| {
+               {
+                   let event = copy_event.clone();
+                   let closure = Closure::<dyn FnMut(_)>::new(move |_: web_sys::ClipboardEvent| {
+                       event.set(true);
+                   });
+                   document
+                       .add_event_listener_with_callback("copy", closure.as_ref().unchecked_ref())
+                       .expect("Failed to add copy event listener");
+                   closure.forget();
+               }
+               {
+                   let event = cut_event.clone();
+                   let closure = Closure::<dyn FnMut(_)>::new(move |_: web_sys::ClipboardEvent| {
+                        event.set(true);
+                   });
+                   document
+                       .add_event_listener_with_callback("cut", closure.as_ref().unchecked_ref())
+                       .expect("Failed to add cut event listener");
+                   closure.forget();
+               }
+               {
+                   let event = paste_event.clone();
+                   let closure = Closure::<dyn FnMut(_)>::new(move |ev: web_sys::ClipboardEvent| {
+                        if let Some(data) = ev.clipboard_data() {
+                            if let Ok(text) = data.get_data("text/plain") {
+                                if let Ok(mut b) = event.try_borrow_mut() {
+                                    *b = text;
+                                }
+                            }
+                        }
+                   });
+                   document
+                       .add_event_listener_with_callback("paste", closure.as_ref().unchecked_ref())
+                       .expect("Failed to add paste event listener");
+                   closure.forget();
+               }
+            })
+        });
+
+        Self {
             surface,
             device,
             queue,
@@ -381,62 +467,18 @@ impl State {
             },
             egui_state,
             context,
-            rpass,
+            egui_renderer,
             import_error,
+            hide_ui: false,
             #[cfg(not(target_arch = "wasm32"))]
             clipboard: arboard::Clipboard::new().unwrap(),
             #[cfg(target_arch = "wasm32")]
-            copy_event: Rc::new(Cell::new(false)),
+            copy_event,
             #[cfg(target_arch = "wasm32")]
-            cut_event: Rc::new(Cell::new(false)),
+            cut_event,
             #[cfg(target_arch = "wasm32")]
-            paste_event: Rc::new(RefCell::new(Default::default())),
-        };
-
-        #[cfg(target_arch = "wasm32")]
-        web_sys::window().and_then(|window| {
-           window.document().and_then(|document| {
-               {
-                   let event = state.copy_event.clone();
-                   let closure = Closure::<dyn FnMut(_)>::new(move |_: web_sys::ClipboardEvent| {
-                       event.set(true);
-                   });
-                   document
-                       .add_event_listener_with_callback("copy", closure.as_ref().unchecked_ref())
-                       .expect("Failed to add copy event listener");
-                   closure.forget();
-               }
-               {
-                   let event = state.cut_event.clone();
-                   let closure = Closure::<dyn FnMut(_)>::new(move |_: web_sys::ClipboardEvent| {
-                        event.set(true);
-                   });
-                   document
-                       .add_event_listener_with_callback("cut", closure.as_ref().unchecked_ref())
-                       .expect("Failed to add cut event listener");
-                   closure.forget();
-               }
-               {
-                   let event = state.paste_event.clone();
-                   let closure = Closure::<dyn FnMut(_)>::new(move |ev: web_sys::ClipboardEvent| {
-                        if let Some(data) = ev.clipboard_data() {
-                            if let Ok(text) = data.get_data("text/plain") {
-                                if let Ok(mut b) = event.try_borrow_mut() {
-                                    *b = text;
-                                }
-                            }
-                        }
-                   });
-                   document
-                       .add_event_listener_with_callback("paste", closure.as_ref().unchecked_ref())
-                       .expect("Failed to add paste event listener");
-                   closure.forget();
-               }
-               Some(())
-           })
-        });
-
-        state
+            paste_event,
+        }
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -448,7 +490,7 @@ impl State {
         }
     }
 
-    fn input(&mut self, event: &WindowEvent) -> bool {
+    fn input(&mut self, event: &WindowEvent, fullscreen: bool) -> bool {
         match event {
             WindowEvent::MouseWheel { delta, .. } => {
                 self.settings.zoom += match delta {
@@ -458,7 +500,7 @@ impl State {
                 .max(-0.9)
                     * self.settings.zoom;
             }
-            WindowEvent::MouseInput { state, button, .. } => match button {
+            WindowEvent::MouseInput { state, button, .. } if !fullscreen => match button {
                 MouseButton::Left => match state {
                     ElementState::Pressed => self.input_state.lmb_pressed = true,
                     ElementState::Released => self.input_state.lmb_pressed = false,
@@ -469,7 +511,7 @@ impl State {
                 },
                 _ => {}
             },
-            WindowEvent::CursorMoved { position, .. } => {
+            WindowEvent::CursorMoved { position, .. } if !fullscreen => {
                 if self.input_state.lmb_pressed {
                     self.settings.centre[0] -= (position.x - self.input_state.prev_cursor_pos.x)
                         as f32
@@ -494,9 +536,16 @@ impl State {
     }
 
     fn update(&mut self) {
-        if self.settings.equation != self.settings.prev_equation {
-            let shader_src =
-                include_str!("shader.wgsl").replace("REPLACE_FRACTAL_EQN", &self.settings.equation);
+        if self.settings.equation != self.settings.prev_equation
+            || self.settings.color != self.settings.prev_color
+        {
+            self.settings.prev_equation = self.settings.equation.clone();
+            self.settings.prev_color = self.settings.color.clone();
+
+            let shader_src = SHADER
+                .replace("REPLACE_FRACTAL_EQN", &self.settings.equation)
+                .replace("REPLACE_COLOR", &self.settings.color);
+
             match naga::front::wgsl::Frontend::new().parse(&shader_src) {
                 Ok(module) => {
                     match naga::valid::Validator::new(ValidationFlags::all(), Capabilities::empty())
@@ -602,165 +651,176 @@ impl State {
         }
         self.context.begin_frame(input);
 
-        egui::Window::new(env!("CARGO_PKG_NAME"))
-            .title_bar(true)
-            .show(&self.context, |ui| {
-                egui::trace!(ui);
+        if !self.hide_ui {
+            egui::Window::new(env!("CARGO_PKG_NAME"))
+                .title_bar(true)
+                .show(&self.context, |ui| {
+                    egui::trace!(ui);
 
-                ui.label(format!(
-                    "Version {} ({}{}{})",
-                    env!("CARGO_PKG_VERSION"),
-                    std::env::consts::OS,
-                    if std::env::consts::OS.is_empty() {
-                        ""
-                    } else {
-                        " "
-                    },
-                    std::env::consts::ARCH
-                ));
-                ui.label(format!("Render backend: {}", self.backend));
-                ui.label(format!(
-                    "Last frame: {:.1}ms ({:.0} FPS)",
-                    self.prev_frame_time.as_micros() as f64 / 1000.0,
-                    1.0 / self.prev_frame_time.as_secs_f64()
-                ));
-                #[cfg(not(target_arch = "wasm32"))]
-                ui.label("Fullscreen: [F11]");
-                ui.separator();
+                    ui.heading(RichText::new("<Press F1 to toggle this UI!>").color(Color32::YELLOW));
 
-                let settings_clone = self.settings.clone();
-
-                ui.collapsing("Zoom [Scroll]", |ui| {
-                    ui.label("Zoom");
-                    ui.add(
-                        egui::Slider::new(&mut self.settings.zoom, 0.0..=100000.0)
-                            .logarithmic(true),
-                    );
-                });
-                ui.separator();
-                ui.collapsing("Iterations", |ui| {
-                    ui.label("Iterations");
-                    ui.add(
-                        egui::Slider::new(&mut self.settings.iterations, 1..=10000)
-                            .logarithmic(true),
-                    );
-                    ui.label("Escape threshold");
-                    ui.add(
-                        egui::Slider::new(
-                            &mut self.settings.escape_threshold,
-                            1.0..=13043817825300000000.0,
-                        ) // approximate square root of maximum f32
-                        .logarithmic(true),
-                    );
-                });
-                ui.separator();
-                ui.collapsing("Centre [Click and drag to pan]", |ui| {
-                    ui.label("Centre");
-                    ui.add(
-                        egui::DragValue::new(&mut self.settings.centre[0])
-                            .speed(0.1 / settings_clone.zoom),
-                    );
-                    ui.add(
-                        egui::DragValue::new(&mut self.settings.centre[1])
-                            .speed(0.1 / settings_clone.zoom)
-                            .suffix("i"),
-                    );
-                    if ui.button("Reset").clicked() {
-                        self.settings.centre = [0.0, 0.0];
-                    }
-                });
-                ui.separator();
-                ui.checkbox(&mut self.settings.julia_set, "Julia set");
-                ui.separator();
-                ui.collapsing("Initial value [Right click and drag]", |ui| {
-                    ui.label("Initial value of z [Right click]");
-                    ui.label("(or value of c for Julia sets)");
-                    ui.add(egui::DragValue::new(&mut self.settings.initial_value[0]).speed(0.01));
-                    ui.add(
-                        egui::DragValue::new(&mut self.settings.initial_value[1])
-                            .speed(0.01)
-                            .suffix("i"),
-                    );
-                    if ui.button("Reset").clicked() {
-                        self.settings.initial_value = [0.0, 0.0];
-                    }
-                });
-                ui.separator();
-                ui.collapsing("Equation", |ui| {
-                    self.settings.prev_equation = settings_clone.equation;
-                    ui.label("Iterative function (WGSL expression)");
-                    egui::ComboBox::from_label("Iterative function")
-                        .selected_text(&self.settings.equation)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.settings.equation,
-                                "csquare(z) + c".to_string(),
-                                "Mandelbrot set",
-                            );
-                            ui.selectable_value(
-                                &mut self.settings.equation,
-                                "csquare(abs(z)) + c".to_string(),
-                                "Burning ship fractal",
-                            );
-                            ui.selectable_value(
-                                &mut self.settings.equation,
-                                "cdiv(cmul(csquare(z), z), vec2<f32>(1.0, 0.0) + z * z) + c"
-                                    .to_string(),
-                                "Feather fractal",
-                            );
-                            ui.selectable_value(
-                                &mut self.settings.equation,
-                                "csquare(vec2<f32>(z.x, -z.y)) + c".to_string(),
-                                "Tricorn fractal",
-                            );
-                        });
-                    ui.label("Custom");
-                    ui.text_edit_singleline(&mut self.settings.equation);
-                    if !settings_clone.equation_valid {
-                        ui.colored_label(Color32::RED, "Invalid expression");
-                    }
-                });
-                {
+                    ui.label(format!(
+                        "Version {} ({}{}{})",
+                        env!("CARGO_PKG_VERSION"),
+                        std::env::consts::OS,
+                        if std::env::consts::OS.is_empty() {
+                            ""
+                        } else {
+                            " "
+                        },
+                        std::env::consts::ARCH
+                    ));
+                    ui.label(format!("Render backend: {}", self.backend));
+                    ui.label(format!(
+                        "Last frame: {:.1}ms ({:.0} FPS)",
+                        self.prev_frame_time.as_micros() as f64 / 1000.0,
+                        1.0 / self.prev_frame_time.as_secs_f64()
+                    ));
+                    #[cfg(not(target_arch = "wasm32"))]
+                    ui.label("Fullscreen: [F11]");
                     ui.separator();
-                    egui::CollapsingHeader::new("Export and import options")
-                        .default_open(!self.import_error.is_empty())
-                        .show(ui, |ui| {
-                        if ui.button("Export to clipboard").clicked() {
-                            ui.output_mut(|o| o.copied_text = self.settings.export_string());
-                        }
-                        if ui.button("Export link to clipboard").clicked() {
-                            ui.output_mut(|o| o.copied_text = format!("https://arthomnix.dev/fractal/?{}", self.settings.export_string()));
-                        }
-                        // Reading clipboard doesn't work in Firefox, so we only support importing from link on web
-                        #[cfg(not(target_arch = "wasm32"))]
-                        if ui.button("Import from clipboard").clicked() {
-                            let text = self.clipboard.get_text().unwrap_or_default();
-                            match UserSettings::import_string(&text) {
-                                Ok(settings) => {
-                                    self.settings = settings;
-                                    self.import_error = String::new();
-                                }
-                                Err(e) => self.import_error = format!("{e}"),
-                            };
-                        }
-                        if !&self.import_error.is_empty() {
-                            ui.colored_label(Color32::RED, format!("Import failed: {}", self.import_error));
-                        }
-                        #[cfg(target_arch = "wasm32")]
-                        ui.label("To import a settings string on web, add '?<string>' to the end of this page's URL.")
+
+                    let settings_clone = self.settings.clone();
+
+                    ui.collapsing("Zoom [Scroll]", |ui| {
+                        ui.label("Zoom");
+                        ui.add(
+                            egui::Slider::new(&mut self.settings.zoom, 0.0..=100000.0)
+                                .logarithmic(true),
+                        );
                     });
-                }
-
-                #[cfg(target_arch = "wasm32")]
-                {
                     ui.separator();
-                    ui.horizontal(|ui| {
-                        ui.hyperlink_to("Source code", "https://github.com/arthomnix/fractal_viewer");
-                        ui.label("|");
-                        ui.hyperlink_to("Download desktop version", "https://github.com/arthomnix/fractal_viewer/releases/latest");
-                    })
-                }
-            });
+                    ui.collapsing("Iterations", |ui| {
+                        ui.label("Iterations");
+                        ui.add(
+                            egui::Slider::new(&mut self.settings.iterations, 1..=10000)
+                                .logarithmic(true),
+                        );
+                        ui.label("Escape threshold");
+                        ui.add(
+                            egui::Slider::new(
+                                &mut self.settings.escape_threshold,
+                                1.0..=13043817825300000000.0,
+                            ) // approximate square root of maximum f32
+                                .logarithmic(true),
+                        );
+                    });
+                    ui.separator();
+                    ui.collapsing("Centre [Click and drag to pan]", |ui| {
+                        ui.label("Centre");
+                        ui.add(
+                            egui::DragValue::new(&mut self.settings.centre[0])
+                                .speed(0.1 / settings_clone.zoom),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut self.settings.centre[1])
+                                .speed(0.1 / settings_clone.zoom)
+                                .suffix("i"),
+                        );
+                        if ui.button("Reset").clicked() {
+                            self.settings.centre = [0.0, 0.0];
+                        }
+                    });
+                    ui.separator();
+                    ui.checkbox(&mut self.settings.julia_set, "Julia set");
+                    ui.separator();
+                    ui.collapsing("Initial value [Hold right click and drag]", |ui| {
+                        ui.label("Initial value of z");
+                        ui.label("(or value of c for Julia sets)");
+                        ui.add(egui::DragValue::new(&mut self.settings.initial_value[0]).speed(0.01));
+                        ui.add(
+                            egui::DragValue::new(&mut self.settings.initial_value[1])
+                                .speed(0.01)
+                                .suffix("i"),
+                        );
+                        if ui.button("Reset").clicked() {
+                            self.settings.initial_value = [0.0, 0.0];
+                        }
+                    });
+                    ui.separator();
+                    ui.collapsing("Equation", |ui| {
+                        ui.label("Iterative function (WGSL expression)");
+                        egui::ComboBox::from_label("Iterative function")
+                            .selected_text("Select default equation")
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut self.settings.equation,
+                                    "csquare(z) + c".to_string(),
+                                    "Mandelbrot set",
+                                );
+                                ui.selectable_value(
+                                    &mut self.settings.equation,
+                                    "csquare(abs(z)) + c".to_string(),
+                                    "Burning ship fractal",
+                                );
+                                ui.selectable_value(
+                                    &mut self.settings.equation,
+                                    "cdiv(cmul(csquare(z), z), vec2<f32>(1.0, 0.0) + z * z) + c"
+                                        .to_string(),
+                                    "Feather fractal",
+                                );
+                                ui.selectable_value(
+                                    &mut self.settings.equation,
+                                    "csquare(vec2<f32>(z.x, -z.y)) + c".to_string(),
+                                    "Tricorn fractal",
+                                );
+                            });
+                        ui.label("...Or edit it yourself!");
+                        ui.add(TextEdit::singleline(&mut self.settings.equation).desired_width(ui.max_rect().width()));
+                        ui.label("How should the colors be filled in:");
+                        ui.add(TextEdit::singleline(&mut self.settings.color).desired_width(ui.max_rect().width()));
+
+                        if !settings_clone.equation_valid {
+                            ui.colored_label(Color32::RED, "Invalid expression");
+                        }
+                    });
+                    
+                    {
+                        ui.separator();
+                        ui.checkbox(&mut self.settings.smoothen, "Smoothen");
+                    }
+                    {
+                        ui.separator();
+                        egui::CollapsingHeader::new("Export and import options")
+                            .default_open(!self.import_error.is_empty())
+                            .show(ui, |ui| {
+                                if ui.button("Export to clipboard").clicked() {
+                                    ui.output_mut(|o| o.copied_text = self.settings.export_string());
+                                }
+                                if ui.button("Export link to clipboard").clicked() {
+                                    ui.output_mut(|o| o.copied_text = format!("{}?{}", option_env!("SITE_LINK").unwrap_or("https://arthomnix.dev/fractal/"), self.settings.export_string()));
+                                }
+                                // Reading clipboard doesn't work in Firefox, so we only support importing from link on web
+                                #[cfg(not(target_arch = "wasm32"))]
+                                if ui.button("Import from clipboard").clicked() {
+                                    let text = self.clipboard.get_text().unwrap_or_default();
+                                    match UserSettings::import_string(&text) {
+                                        Ok(settings) => {
+                                            self.settings = settings;
+                                            self.import_error = String::new();
+                                        }
+                                        Err(e) => self.import_error = format!("{e}"),
+                                    };
+                                }
+                                if !&self.import_error.is_empty() {
+                                    ui.colored_label(Color32::RED, format!("Import failed: {}", self.import_error));
+                                }
+                                #[cfg(target_arch = "wasm32")]
+                                ui.label("To import a settings string on web, add '?<string>' to the end of this page's URL.")
+                            });
+                    }
+
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        ui.separator();
+                        ui.horizontal(|ui| {
+                            ui.hyperlink_to("Source code", "https://github.com/arthomnix/fractal_viewer");
+                            ui.label("|");
+                            ui.hyperlink_to("Download desktop version", "https://github.com/arthomnix/fractal_viewer/releases/latest");
+                        })
+                    }
+                });
+        }
 
         let full_output = self.context.end_frame();
         #[cfg(target_arch = "wasm32")]
@@ -769,6 +829,7 @@ impl State {
                 web_set_clipboard_text(&full_output.platform_output.copied_text);
             }
         }
+
         self.egui_state.handle_platform_output(&window, &self.context, full_output.platform_output);
         let paint_jobs = self.context.tessellate(full_output.shapes);
 
@@ -787,12 +848,19 @@ impl State {
             },
         };
 
-        let tdelta = full_output.textures_delta;
-
-        for (id, delta) in tdelta.set.iter() {
-            self.rpass.update_texture(&self.device, &self.queue, *id, delta);
-        }
-        self.rpass.update_buffers(&self.device, &self.queue, &mut encoder, &paint_jobs, &screen_descriptor);
+        {
+            for (id, delta) in full_output.textures_delta.set {
+                self.egui_renderer.update_texture(&self.device, &self.queue, id, &delta);
+            }
+          
+            self.egui_renderer.update_buffers(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                &paint_jobs,
+                &screen_descriptor,
+            )
+        };
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -801,12 +869,7 @@ impl State {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: true,
                     },
                 })],
@@ -817,7 +880,11 @@ impl State {
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             render_pass.draw(0..6, 0..1);
 
-            self.rpass.render(&mut render_pass, &paint_jobs, &screen_descriptor);
+            self.egui_renderer.render(&mut render_pass, &paint_jobs, &screen_descriptor);
+        }
+
+        for id in &full_output.textures_delta.free {
+            self.egui_renderer.free_texture(id);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -848,7 +915,7 @@ pub async fn run() {
     cfg_if::cfg_if! {
         if #[cfg(target_arch="wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-            console_log::init_with_level(log::Level::Warn).expect("Couldn't initialise logger");
+            console_log::init_with_level(log::Level::Info).expect("Couldn't initialise logger");
         } else {
             env_logger::init();
         }
@@ -857,11 +924,10 @@ pub async fn run() {
     let event_loop = EventLoop::new();
     let builder = WindowBuilder::new();
     #[cfg(target_arch = "wasm32")]
-        let builder = {
+    let builder = {
         use winit::platform::web::WindowBuilderExtWebSys;
 
-        builder.with_prevent_default(false)
-            .with_focusable(true)
+        builder.with_prevent_default(false).with_focusable(true)
     };
     let window = builder.build(&event_loop).unwrap();
 
@@ -891,100 +957,187 @@ pub async fn run() {
 
     let mut last_title_update = Instant::now();
 
-    event_loop.run(move |event, _, control_flow| match event {
-        Event::WindowEvent {
-            ref event,
-            window_id,
-        } if window_id == window.id() => {
-            if !state.egui_state.on_event(&state.context, event).consumed && !state.input(event) {
-                match event {
-                    WindowEvent::CloseRequested
-                    | WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                state: ElementState::Pressed,
-                                virtual_keycode: Some(VirtualKeyCode::Escape),
-                                ..
-                            },
-                        ..
-                    } => *control_flow = ControlFlow::Exit,
-                    #[cfg(not(target_arch = "wasm32"))]
-                    WindowEvent::KeyboardInput {
-                        input:
+    #[cfg(target_arch = "wasm32")]
+    let mut modifiers_state = ModifiersState::empty();
+
+    event_loop.run(move |event, _, control_flow| {
+        #[cfg(target_arch = "wasm32")]
+        let web_fullscreen = web_sys::window()
+            .and_then(|win| win.screen().ok().zip(Some(win)))
+            .map(|(screen, win)| {
+                screen.width().ok()
+                    == win
+                        .inner_width()
+                        .ok()
+                        .and_then(|v| v.as_f64())
+                        .map(|v| v as i32)
+                    && screen.height().ok()
+                        == win
+                            .inner_height()
+                            .ok()
+                            .and_then(|v| v.as_f64())
+                            .map(|v| v as i32)
+            })
+            .unwrap_or(false);
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let web_fullscreen = false;
+
+        let fullscreen = window.fullscreen().is_some() || web_fullscreen;
+
+        match event {
+            Event::WindowEvent {
+                ref event,
+                window_id,
+            } if window_id == window.id() => {
+                // FIXME this will be obsolete whenever winit fixes this issue with web
+                #[cfg(target_arch = "wasm32")]
+                if let WindowEvent::KeyboardInput {
+                    input:
+                        KeyboardInput {
+                            state: pressed,
+                            virtual_keycode: Some(key),
+                            ..
+                        },
+                    ..
+                } = event
+                {
+                    match key {
+                        VirtualKeyCode::LAlt | VirtualKeyCode::RAlt => {
+                            if *pressed == ElementState::Pressed {
+                                modifiers_state |= ModifiersState::ALT;
+                            } else {
+                                modifiers_state -= ModifiersState::ALT;
+                            }
+                            let _ = state.egui_state.on_event(
+                                &state.context,
+                                &WindowEvent::ModifiersChanged(modifiers_state),
+                            );
+                        }
+                        VirtualKeyCode::LControl | VirtualKeyCode::RControl => {
+                            if *pressed == ElementState::Pressed {
+                                modifiers_state |= ModifiersState::CTRL;
+                            } else {
+                                modifiers_state -= ModifiersState::CTRL;
+                            }
+                            let _ = state.egui_state.on_event(
+                                &state.context,
+                                &WindowEvent::ModifiersChanged(modifiers_state),
+                            );
+                        }
+                        VirtualKeyCode::LShift | VirtualKeyCode::RShift => {
+                            if *pressed == ElementState::Pressed {
+                                modifiers_state |= ModifiersState::SHIFT;
+                            } else {
+                                modifiers_state -= ModifiersState::SHIFT;
+                            }
+                            let _ = state.egui_state.on_event(
+                                &state.context,
+                                &WindowEvent::ModifiersChanged(modifiers_state),
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+
+                let mut egui_consumed = false;
+                if !fullscreen {
+                    egui_consumed = state.egui_state.on_event(&state.context, event).consumed;
+                }
+
+                if !egui_consumed && !state.input(event, fullscreen) {
+                    match event {
+                        WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                        #[cfg(not(target_arch = "wasm32"))]
+                        WindowEvent::KeyboardInput {
+                            input:
                             KeyboardInput {
                                 state: ElementState::Pressed,
                                 virtual_keycode: Some(VirtualKeyCode::F11),
                                 ..
                             },
-                        ..
-                    } => {
-                        if window.fullscreen().is_some() {
-                            window.set_fullscreen(None);
-                        } else {
-                            window.current_monitor().map(|monitor| {
-                                monitor.video_modes().next().map(|mode| {
-                                    window.set_fullscreen(Some(Fullscreen::Exclusive(mode)));
-                                })
-                            });
+                            ..
+                        } => {
+                            if window.fullscreen().is_some() {
+                                window.set_fullscreen(None);
+                            } else {
+                                window.current_monitor().map(|monitor| {
+                                    monitor.video_modes().next().map(|mode| {
+                                        window.set_fullscreen(Some(Fullscreen::Exclusive(mode)));
+                                    })
+                                });
+                            }
                         }
+                        WindowEvent::KeyboardInput {
+                            input:
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::F1),
+                                ..
+                            },
+                            ..
+                        } => {
+                            state.hide_ui = !state.hide_ui;
+                        }
+                        WindowEvent::Resized(physical_size) => state.resize(*physical_size),
+                        WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                            state.resize(**new_inner_size)
+                        }
+                        _ => {}
                     }
-                    WindowEvent::Resized(physical_size) => state.resize(*physical_size),
-                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                        state.resize(**new_inner_size)
-                    }
-                    _ => {}
                 }
             }
-        }
-        Event::MainEventsCleared => window.request_redraw(),
-        Event::RedrawRequested(window_id) => {
-            if window_id == window.id() {
-                #[cfg(target_arch = "wasm32")]
-                {
-                    use winit::dpi::LogicalSize;
-
-                    web_sys::window()
-                        .and_then(|win| {
-                            window.set_inner_size(LogicalSize::new(
-                                win.inner_width().ok()?.as_f64()?,
-                                win.inner_height().ok()?.as_f64()?,
-                            ));
-                            Some(())
-                        })
-                        .expect("Couldn't resize window");
-                }
-
-                if last_title_update.elapsed() >= Duration::from_secs(1) {
-                    let title = format!(
-                        "{} {} [{} | {} | {:.0} FPS]",
-                        env!("CARGO_PKG_NAME"),
-                        env!("CARGO_PKG_VERSION"),
-                        state.backend,
-                        std::env::consts::ARCH,
-                        (1.0 / state.prev_frame_time.as_secs_f64())
-                    );
-                    window.set_title(&*title);
+            Event::MainEventsCleared => window.request_redraw(),
+            Event::RedrawRequested(window_id) => {
+                if window_id == window.id() {
                     #[cfg(target_arch = "wasm32")]
                     {
+                        use winit::dpi::LogicalSize;
+
                         web_sys::window()
-                            .and_then(|win| win.document())
-                            .and_then(|doc| {
-                                let title_element = doc.get_element_by_id("title")?;
-                                title_element.set_inner_html(&title);
+                            .and_then(|win| {
+                                window.set_inner_size(LogicalSize::new(
+                                    win.inner_width().ok()?.as_f64()?,
+                                    win.inner_height().ok()?.as_f64()?,
+                                ));
                                 Some(())
-                            });
+                            })
+                            .expect("Couldn't resize window");
                     }
-                    last_title_update = Instant::now();
-                }
-                state.update();
-                match state.render(&window) {
-                    Ok(_) => {}
-                    Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                    Err(e) => eprintln!("{:?}", e),
+
+                    if last_title_update.elapsed() >= Duration::from_secs(1) {
+                        let title = format!(
+                            "{} {} [{} | {} | {:.0} FPS]",
+                            env!("CARGO_PKG_NAME"),
+                            env!("CARGO_PKG_VERSION"),
+                            state.backend,
+                            std::env::consts::ARCH,
+                            (1.0 / state.prev_frame_time.as_secs_f64())
+                        );
+                        window.set_title(&title);
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            web_sys::window()
+                                .and_then(|win| win.document())
+                                .and_then(|doc| {
+                                    let title_element = doc.get_element_by_id("title")?;
+                                    title_element.set_inner_html(&title);
+                                    Some(())
+                                });
+                        }
+                        last_title_update = Instant::now();
+                    }
+
+                    state.update();
+                    match state.render(&window) {
+                        Ok(_) => {}
+                        Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
+                        Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                        Err(e) => eprintln!("{:?}", e),
+                    }
                 }
             }
+            _ => {}
         }
-        _ => {}
     });
 }
