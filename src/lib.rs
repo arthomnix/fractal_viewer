@@ -230,7 +230,7 @@ impl State {
             Backend::Metal => "Metal",
             Backend::Dx12 => "DirectX 12",
             Backend::Dx11 => "DirectX 11",
-            Backend::Gl => "OpenGL",
+            Backend::Gl => "WebGL/OpenGL",
             Backend::BrowserWebGpu => "WebGPU",
         };
 
