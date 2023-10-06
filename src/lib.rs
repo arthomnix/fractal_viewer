@@ -98,7 +98,7 @@ impl Uniforms {
                 size.height as f32 / 2.0 * scale - settings.centre[1],
             ],
             iterations: settings.iterations,
-            flags: (settings.internal_black as u32) << 2 | (settings.smoothen as u32) << 1 | (settings.julia_set as u32),
+            flags: (settings.initial_c as u32) << 3 | (settings.internal_black as u32) << 2 | (settings.smoothen as u32) << 1 | (settings.julia_set as u32),
             initial_value: settings.initial_value,
             escape_threshold: settings.escape_threshold,
         }
@@ -120,6 +120,7 @@ struct UserSettings {
     internal_black: bool,
     initial_value: [f32; 2],
     escape_threshold: f32,
+    initial_c: bool,
 }
 
 impl UserSettings {
@@ -167,6 +168,7 @@ impl UserSettings {
         } else {
             match major_minor_version {
                 "0.3" => Ok(compat::v0_3::UserSettings::import_string(base64)?.into()),
+                "0.4" => Ok(compat::v0_4::UserSettings::import_string(base64)?.into()),
                 _ => Err(InvalidSettingsImportError::VersionMismatch),
             }
         }
@@ -302,6 +304,7 @@ impl State {
             internal_black: true,
             initial_value: [0.0, 0.0],
             escape_threshold: 2.0,
+            initial_c: false,
         };
 
         #[allow(unused_mut)]
@@ -656,8 +659,6 @@ impl State {
             egui::Window::new(env!("CARGO_PKG_NAME"))
                 .title_bar(true)
                 .show(&self.context, |ui| {
-                    egui::trace!(ui);
-
                     ui.label(format!(
                         "Version {} ({}{}{})",
                         env!("CARGO_PKG_VERSION"),
@@ -737,6 +738,7 @@ impl State {
                         if ui.button("Reset").clicked() {
                             self.settings.initial_value = [0.0, 0.0];
                         }
+                        ui.checkbox(&mut self.settings.initial_c, "Add c to initial value");
                     });
                     ui.separator();
                     ui.collapsing("Equation", |ui| {

@@ -1,6 +1,6 @@
 [package]
 name = "fractal_viewer"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "Cross-platform GPU-accelerated viewer for the Mandelbrot set and related fractals"
 repository = "https://github.com/arthomnix/fractal_viewer"
@@ -22,12 +22,12 @@ cfg-if = "1"
 winit = "0.28"
 env_logger = "0.10"
 log = "0.4"
-wgpu = "0.16"
+wgpu = "0.17"
 naga = { version = "0.13", features = [ "wgsl-in", "validate" ] }
 pollster = "0.3"
 bytemuck = { version = "1.12", features = [ "derive" ] }
-egui = "0.22"
-egui-wgpu = "0.22"
+egui = "0.23"
+egui-wgpu = "0.23"
 instant = "0.1"
 bincode = "1.3"
 serde = { version = "1.0", features = [ "derive" ] }
@@ -36,14 +36,14 @@ url = "2.3"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 arboard = { version = "3.1", features = [ "wayland-data-control" ] }
-egui-winit = "0.22"
+egui-winit = "0.23"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1"
 console_log = "1.0"
-wgpu = "0.16"
+wgpu = "0.17"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [ "Document", "Window", "Element", "Clipboard", "ClipboardEvent", "DataTransfer", "Navigator", "Location", "Screen" ] }
 getrandom = { version = "0.2", features = [ "js" ] }
-egui-winit = { version = "0.22", default-features = false, features = [ "links" ] }
+egui-winit = { version = "0.23", default-features = false, features = [ "links" ] }

@@ -10,6 +10,7 @@ struct Uniforms {
 const JULIA_SET = 1u;
 const SMOOTHEN = 2u;
 const INTERNAL_BLACK = 4u;
+const INITIAL_C = 8u;
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
@@ -30,14 +31,27 @@ fn cabs_squared(z: vec2<f32>) -> f32 {
     return (z.x * z.x + z.y * z.y);
 }
 
+// deprecated: use length(z) instead
 fn cabs(z: vec2<f32>) -> f32 {
-    return sqrt(cabs_squared(z));
+    return length(z);
 }
 
 fn cpow(z: vec2<f32>, p: f32) -> vec2<f32> {
-    let r: f32 = cabs(z);
+    let r: f32 = length(z);
     let arg: f32 = atan2(z.y, z.x);
     return vec2<f32>(pow(r, p) * cos(p * arg), pow(r, p) * sin(p * arg));
+}
+
+fn ccpow(z: vec2<f32>, w: vec2<f32>) -> vec2<f32> {
+    let r: f32 = length(z);
+    var len: f32 = pow(r, w.x);
+    let arg: f32 = atan2(z.y, z.x);
+    var phase: f32 = arg * w.x;
+    if (w.y != 0.0) {
+        len /= exp(arg * w.y);
+        phase += w.y * log(r);
+    }
+    return vec2<f32>(len * cos(phase), len * sin(phase));
 }
 
 fn cdiv(w: vec2<f32>, z: vec2<f32>) -> vec2<f32> {
@@ -89,11 +103,16 @@ fn hsv_rgb(hsv: vec3<f32>) -> vec3<f32> {
 
 fn get_fragment_colour(c: vec2<f32>) -> vec4<f32> {
     var i: i32 = 0;
-    var z: vec2<f32> = vec2(0.0);
+    var z: vec2<f32>;
 
     if ((uniforms.flags & JULIA_SET) == 0u) {
+        if ((uniforms.flags & INITIAL_C) != 0u) {
+            z = c;
+            i++;
+        }
+
         for (
-            z = uniforms.initial_value;
+            z += uniforms.initial_value;
             cabs_squared(z) < uniforms.escape_threshold * uniforms.escape_threshold;
             z = REPLACE_FRACTAL_EQN // gets replaced by user-defined expression
         ) {
