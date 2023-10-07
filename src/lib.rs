@@ -702,8 +702,8 @@ impl State {
                         ui.add(
                             egui::Slider::new(
                                 &mut self.settings.escape_threshold,
-                                1.0..=13043817825300000000.0,
-                            ) // approximate square root of maximum f32
+                                1.0..=f32::MAX,
+                            )
                                 .logarithmic(true),
                         );
                     });

@@ -27,6 +27,7 @@ fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) ve
     return vertex_positions[in_vertex_index];
 }
 
+// deprecated: use length(z)^2 instead
 fn cabs_squared(z: vec2<f32>) -> f32 {
     return (z.x * z.x + z.y * z.y);
 }
@@ -113,7 +114,7 @@ fn get_fragment_colour(c: vec2<f32>) -> vec4<f32> {
 
         for (
             z += uniforms.initial_value;
-            cabs_squared(z) < uniforms.escape_threshold * uniforms.escape_threshold;
+            length(z) < uniforms.escape_threshold;
             z = REPLACE_FRACTAL_EQN // gets replaced by user-defined expression
         ) {
             i++;
@@ -129,7 +130,7 @@ fn get_fragment_colour(c: vec2<f32>) -> vec4<f32> {
         z = c;
         var c: vec2<f32> = uniforms.initial_value;
         for (;
-            cabs_squared(z) < uniforms.escape_threshold * uniforms.escape_threshold;
+            length(z) < uniforms.escape_threshold;
             z = REPLACE_FRACTAL_EQN // gets replaced by user-defined expression
         ) {
             i++;
