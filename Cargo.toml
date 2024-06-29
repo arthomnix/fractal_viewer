@@ -1,0 +1,24 @@
+[package]
+name = "fractal_viewer"
+version = "2.0.0-alpha.1"
+edition = "2021"
+
+[[bin]]
+name = "fractal_viewer_bin"
+path = "src/main.rs"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+eframe = { version = "0.27", features = [ "wgpu" ] }
+egui-wgpu = "0.27"
+wgpu = "0.19"
+naga = "0.19"
+env_logger = "0.11"
+bytemuck = { version = "1.16", features = [ "derive" ] }
+bincode = "1.3"
+serde = { version = "1.0", features = [ "derive"] }
+base64 = "0.22"
+url = "2.5"
+arboard = { version = "3.4", features = [ "wayland-data-control" ] }
