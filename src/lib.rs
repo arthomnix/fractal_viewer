@@ -18,9 +18,11 @@ use std::sync::Arc;
 use std::time::Duration;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
-    Backend, BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, Buffer,
-    ColorTargetState, CommandBuffer, CommandEncoder, Device, PipelineLayoutDescriptor, Queue,
-    RenderPass, RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource,
+    Backend, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
+    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, Buffer, BufferBindingType,
+    BufferUsages, ColorTargetState, CommandBuffer, CommandEncoder, Device, FragmentState,
+    MultisampleState, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPass, RenderPipeline,
+    RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, VertexState,
 };
 
 static SHADER: &str = include_str!("shader.wgsl");
@@ -89,17 +91,17 @@ impl FractalViewerApp {
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("fv_uniform_buffer"),
             contents: bytemuck::cast_slice(&[Uniforms::new(size, &settings)]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
         let uniform_bind_group_layout =
             device.create_bind_group_layout(&BindGroupLayoutDescriptor {
                 label: Some("fv_uniform_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
+                entries: &[BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
+                    visibility: ShaderStages::VERTEX_FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -110,7 +112,7 @@ impl FractalViewerApp {
         let uniform_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("fv_uniform_bind_group"),
             layout: &uniform_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
+            entries: &[BindGroupEntry {
                 binding: 0,
                 resource: uniform_buffer.as_entire_binding(),
             }],
@@ -135,19 +137,19 @@ impl FractalViewerApp {
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
             label: Some("fv_pipeline"),
             layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
+            vertex: VertexState {
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[],
             },
-            fragment: Some(wgpu::FragmentState {
+            fragment: Some(FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu_render_state.target_format.into())],
             }),
-            primitive: wgpu::PrimitiveState::default(),
+            primitive: PrimitiveState::default(),
             depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
+            multisample: MultisampleState::default(),
             multiview: None,
         });
 
@@ -514,19 +516,19 @@ impl FvRenderer {
                 .create_render_pipeline(&RenderPipelineDescriptor {
                     label: Some("fv_pipeline"),
                     layout: Some(&pipeline_layout),
-                    vertex: wgpu::VertexState {
+                    vertex: VertexState {
                         module: &shader,
                         entry_point: "vs_main",
                         buffers: &[],
                     },
-                    fragment: Some(wgpu::FragmentState {
+                    fragment: Some(FragmentState {
                         module: &shader,
                         entry_point: "fs_main",
                         targets: &[Some(self.target_format.clone())],
                     }),
-                    primitive: wgpu::PrimitiveState::default(),
+                    primitive: PrimitiveState::default(),
                     depth_stencil: None,
-                    multisample: wgpu::MultisampleState::default(),
+                    multisample: MultisampleState::default(),
                     multiview: None,
                 });
 
