@@ -1,16 +1,27 @@
 mod settings;
 mod uniforms;
+#[cfg(target_arch = "wasm32")]
+mod web;
 
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use eframe::egui::{Color32, Context, Key, PaintCallbackInfo, PointerButton, TextEdit, ViewportCommand};
-use eframe::{egui, Frame};
-use egui_wgpu::{CallbackResources, ScreenDescriptor};
-use naga::valid::{Capabilities, ValidationFlags};
-use wgpu::{Backend, BindGroup, BindGroupLayout, Buffer, ColorTargetState, CommandBuffer, CommandEncoder, Device, PipelineLayoutDescriptor, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource};
-use wgpu::util::DeviceExt;
 use crate::settings::UserSettings;
 use crate::uniforms::{calculate_scale, Uniforms};
+#[allow(unused_imports)] // eframe::egui::ViewportCommand used on native but not web
+use eframe::egui::{
+    Color32, Context, Key, PaintCallbackInfo, PointerButton, TextEdit, ViewportCommand,
+};
+use eframe::{egui, Frame};
+use egui_wgpu::{CallbackResources, ScreenDescriptor};
+use instant::Instant;
+use naga::valid::{Capabilities, ValidationFlags};
+use std::collections::VecDeque;
+use std::sync::Arc;
+use std::time::Duration;
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use wgpu::{
+    Backend, BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, Buffer,
+    ColorTargetState, CommandBuffer, CommandEncoder, Device, PipelineLayoutDescriptor, Queue,
+    RenderPass, RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource,
+};
 
 static SHADER: &str = include_str!("shader.wgsl");
 
@@ -19,12 +30,13 @@ fn validate_shader(equation: &str, colour: &str) -> Result<(), String> {
         .replace("REPLACE_FRACTAL_EQN", equation)
         .replace("REPLACE_COLOR", colour);
 
-    let module = naga::front::wgsl::Frontend::new().parse(&shader_src)
+    let module = naga::front::wgsl::Frontend::new()
+        .parse(&shader_src)
         .map_err(|e| e.to_string())?;
     naga::valid::Validator::new(ValidationFlags::all(), Capabilities::empty())
         .validate(&module)
-        .map_err(|e| e.to_string())
-        .map(|_| ())
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 pub struct FractalViewerApp {
@@ -37,45 +49,65 @@ pub struct FractalViewerApp {
     recompile_shader: bool,
     shader_error: Option<String>,
     import_error: Option<String>,
+    fps_samples: VecDeque<f32>,
+    last_title_update: Option<Instant>,
+    #[cfg(not(target_arch = "wasm32"))]
     clipboard: arboard::Clipboard,
 }
 
 impl FractalViewerApp {
     pub fn new<'a>(cc: &'a eframe::CreationContext<'a>) -> Option<Self> {
+        #[cfg(not(target_arch = "wasm32"))]
         let settings = UserSettings::default();
+        #[cfg(not(target_arch = "wasm32"))]
+        let import_error = None;
+
+        #[cfg(target_arch = "wasm32")]
+        let (settings, import_error) = match web_sys::window()
+            .and_then(|w| match w.location().href().ok() {
+                Some(s) if s.contains('?') => Some(s),
+                _ => None,
+            })
+            .map(|url| UserSettings::import_string(&url))
+            .unwrap_or_else(|| Ok(UserSettings::default()))
+        {
+            Ok(settings) => (settings, None),
+            Err(e) => (UserSettings::default(), Some(e.to_string())),
+        };
 
         let wgpu_render_state = cc.wgpu_render_state.as_ref()?;
         let device = &wgpu_render_state.device;
 
         let size = cc.egui_ctx.screen_rect().size();
 
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("fv_uniform_buffer"),
             contents: bytemuck::cast_slice(&[Uniforms::new(size, &settings)]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("fv_uniform_bind_group_layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let uniform_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("fv_uniform_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
 
-        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let uniform_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("fv_uniform_bind_group"),
             layout: &uniform_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: uniform_buffer.as_entire_binding(),
-            }]
+            }],
         });
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -84,7 +116,7 @@ impl FractalViewerApp {
                 SHADER
                     .replace("REPLACE_FRACTAL_EQN", &settings.equation)
                     .replace("REPLACE_COLOR", &settings.colour)
-                    .into()
+                    .into(),
             ),
         });
 
@@ -113,14 +145,18 @@ impl FractalViewerApp {
             multiview: None,
         });
 
-        wgpu_render_state.renderer.write().callback_resources.insert(FvRenderer {
-            device: Arc::clone(device),
-            pipeline,
-            target_format: wgpu_render_state.target_format.into(),
-            bind_group: uniform_bind_group,
-            bind_group_layout: uniform_bind_group_layout,
-            uniform_buffer,
-        });
+        wgpu_render_state
+            .renderer
+            .write()
+            .callback_resources
+            .insert(FvRenderer {
+                device: Arc::clone(device),
+                pipeline,
+                target_format: wgpu_render_state.target_format.into(),
+                bind_group: uniform_bind_group,
+                bind_group_layout: uniform_bind_group_layout,
+                uniform_buffer,
+            });
 
         let adapter_info = wgpu_render_state.adapter.get_info();
         let backend = match adapter_info.backend {
@@ -142,7 +178,10 @@ impl FractalViewerApp {
             show_ui: true,
             recompile_shader: false,
             shader_error: None,
-            import_error: None,
+            import_error,
+            fps_samples: VecDeque::new(),
+            last_title_update: None,
+            #[cfg(not(target_arch = "wasm32"))]
             clipboard: arboard::Clipboard::new().unwrap(),
         })
     }
@@ -156,10 +195,14 @@ impl FractalViewerApp {
             let drag_motion = response.drag_delta();
             self.settings.centre[0] -= drag_motion.x * scale;
             self.settings.centre[1] -= drag_motion.y * scale;
-        } else if response.clicked_by(PointerButton::Secondary) || response.dragged_by(PointerButton::Secondary) {
+        } else if response.clicked_by(PointerButton::Secondary)
+            || response.dragged_by(PointerButton::Secondary)
+        {
             let pointer_pos = response.interact_pointer_pos().unwrap();
-            self.settings.initial_value[0] = (pointer_pos.x - size.x / 2.0) * scale + self.settings.centre[0];
-            self.settings.initial_value[1] = (pointer_pos.y - size.y / 2.0) * scale + self.settings.centre[1];
+            self.settings.initial_value[0] =
+                (pointer_pos.x - size.x / 2.0) * scale + self.settings.centre[0];
+            self.settings.initial_value[1] =
+                (pointer_pos.y - size.y / 2.0) * scale + self.settings.centre[1];
         }
 
         let scroll = ui.input(|i| i.raw_scroll_delta);
@@ -169,15 +212,50 @@ impl FractalViewerApp {
 
         let callback = FvRenderCallback {
             uniforms,
-            shader_recompilation_options: if self.recompile_shader { Some((self.settings.equation.clone(), self.settings.colour.clone())) } else { None }
+            shader_recompilation_options: if self.recompile_shader {
+                Some((self.settings.equation.clone(), self.settings.colour.clone()))
+            } else {
+                None
+            },
         };
 
-        ui.painter().add(egui_wgpu::Callback::new_paint_callback(rect, callback));
+        ui.painter()
+            .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
     }
 }
 
 impl eframe::App for FractalViewerApp {
     fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
+        let fps = self.fps_samples.iter().sum::<f32>() / self.fps_samples.len() as f32;
+        if self.last_title_update.is_none()
+            || self
+                .last_title_update
+                .is_some_and(|i| i.elapsed() >= Duration::from_secs(1))
+        {
+            let title = format!(
+                "{} {} [{} | {} | {:.0} FPS]",
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION"),
+                self.backend,
+                std::env::consts::ARCH,
+                fps
+            );
+
+            #[cfg(not(target_arch = "wasm32"))]
+            ctx.send_viewport_cmd(ViewportCommand::Title(title));
+
+            #[cfg(target_arch = "wasm32")]
+            if let Some(title_element) = web_sys::window()
+                .and_then(|window| window.document())
+                .and_then(|document| document.get_element_by_id("title"))
+            {
+                title_element.set_inner_html(&title);
+            }
+
+            self.last_title_update = Some(Instant::now());
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
         if ctx.input(|i| i.key_pressed(Key::F11)) {
             let current_fullscreen = ctx.input(|i| i.viewport().fullscreen.unwrap());
             ctx.send_viewport_cmd(ViewportCommand::Fullscreen(!current_fullscreen));
@@ -206,11 +284,17 @@ impl eframe::App for FractalViewerApp {
                     },
                     std::env::consts::ARCH
                 ));
-                ui.label(format!("Render backend: {} ({})", self.backend, &self.driver_info));
+
+                if self.driver_info.is_empty() {
+                    ui.label(format!("Render backend: {}", self.backend));
+                } else {
+                    ui.label(format!("Render backend: {} ({})", self.backend, &self.driver_info));
+                }
+
                 ui.label(format!(
-                    "Last frame: {:.1}ms ({:.0} FPS)",
+                    "Last frame: {:.1}ms (smoothed FPS: {:.0})",
                     self.prev_frame_time.as_micros() as f64 / 1000.0,
-                    1.0 / self.prev_frame_time.as_secs_f64()
+                    self.fps_samples.iter().sum::<f32>() / self.fps_samples.len() as f32
                 ));
                 #[cfg(not(target_arch = "wasm32"))]
                 ui.label("Fullscreen: [F11]");
@@ -380,6 +464,11 @@ impl eframe::App for FractalViewerApp {
         }
 
         self.prev_frame_time = self.last_frame.elapsed();
+        let new_fps = self.prev_frame_time.as_secs_f32().recip();
+        self.fps_samples.push_back(new_fps);
+        if self.fps_samples.len() > 200 {
+            self.fps_samples.pop_front();
+        }
         self.last_frame = Instant::now();
     }
 }
@@ -402,39 +491,47 @@ impl FvRenderer {
                     SHADER
                         .replace("REPLACE_FRACTAL_EQN", &equation)
                         .replace("REPLACE_COLOR", &colour)
-                        .into()
+                        .into(),
                 ),
             });
 
-            let pipeline_layout = self.device.create_pipeline_layout(&PipelineLayoutDescriptor {
-                label: Some("fv_pipeline_layout"),
-                bind_group_layouts: &[&self.bind_group_layout],
-                push_constant_ranges: &[],
-            });
+            let pipeline_layout = self
+                .device
+                .create_pipeline_layout(&PipelineLayoutDescriptor {
+                    label: Some("fv_pipeline_layout"),
+                    bind_group_layouts: &[&self.bind_group_layout],
+                    push_constant_ranges: &[],
+                });
 
-            let pipeline = self.device.create_render_pipeline(&RenderPipelineDescriptor {
-                label: Some("fv_pipeline"),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: "vs_main",
-                    buffers: &[],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: "fs_main",
-                    targets: &[Some(self.target_format.clone())],
-                }),
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                multiview: None,
-            });
+            let pipeline = self
+                .device
+                .create_render_pipeline(&RenderPipelineDescriptor {
+                    label: Some("fv_pipeline"),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: "vs_main",
+                        buffers: &[],
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader,
+                        entry_point: "fs_main",
+                        targets: &[Some(self.target_format.clone())],
+                    }),
+                    primitive: wgpu::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                });
 
             self.pipeline = pipeline;
         }
 
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[callback.uniforms]));
+        queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[callback.uniforms]),
+        );
     }
 
     fn paint<'rp>(&'rp self, render_pass: &mut RenderPass<'rp>) {
@@ -456,7 +553,7 @@ impl egui_wgpu::CallbackTrait for FvRenderCallback {
         queue: &Queue,
         _screen_descriptor: &ScreenDescriptor,
         _egui_encoder: &mut CommandEncoder,
-        callback_resources: &mut CallbackResources
+        callback_resources: &mut CallbackResources,
     ) -> Vec<CommandBuffer> {
         let renderer: &mut FvRenderer = callback_resources.get_mut().unwrap();
         renderer.prepare(queue, self);
@@ -467,7 +564,7 @@ impl egui_wgpu::CallbackTrait for FvRenderCallback {
         &'a self,
         _info: PaintCallbackInfo,
         render_pass: &mut RenderPass<'a>,
-        callback_resources: &'a CallbackResources
+        callback_resources: &'a CallbackResources,
     ) {
         let renderer: &FvRenderer = callback_resources.get().unwrap();
         renderer.paint(render_pass);

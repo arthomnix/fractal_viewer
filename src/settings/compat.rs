@@ -19,8 +19,11 @@ pub(crate) mod v0_3 {
 
     impl UserSettings {
         pub(crate) fn import_string(string: &str) -> Result<Self, InvalidSettingsImportError> {
-            let bytes = general_purpose::STANDARD.decode(string).map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
-            let result = bincode::deserialize::<'_, Self>(bytes.as_slice()).map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
+            let bytes = general_purpose::STANDARD
+                .decode(string)
+                .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
+            let result = bincode::deserialize::<'_, Self>(bytes.as_slice())
+                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
             Ok(result)
         }
     }
@@ -32,7 +35,9 @@ pub(crate) mod v0_3 {
                 centre: self.centre,
                 iterations: self.iterations,
                 equation: self.equation,
-                colour: "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))".to_string(),
+                colour:
+                    "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))"
+                        .to_string(),
                 julia_set: self.julia_set,
                 smoothen: false,
                 internal_black: true,
@@ -69,8 +74,11 @@ pub(crate) mod v0_4 {
 
     impl UserSettings {
         pub(crate) fn import_string(string: &str) -> Result<Self, InvalidSettingsImportError> {
-            let bytes = general_purpose::STANDARD.decode(string).map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
-            let result = bincode::deserialize::<'_, Self>(bytes.as_slice()).map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
+            let bytes = general_purpose::STANDARD
+                .decode(string)
+                .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
+            let result = bincode::deserialize::<'_, Self>(bytes.as_slice())
+                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
             Ok(result)
         }
     }
@@ -120,8 +128,11 @@ pub(crate) mod v0_5 {
 
     impl UserSettings {
         pub(crate) fn import_string(string: &str) -> Result<Self, InvalidSettingsImportError> {
-            let bytes = general_purpose::STANDARD.decode(string).map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
-            let result = bincode::deserialize::<'_, Self>(bytes.as_slice()).map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
+            let bytes = general_purpose::STANDARD
+                .decode(string)
+                .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
+            let result = bincode::deserialize::<'_, Self>(bytes.as_slice())
+                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
             Ok(result)
         }
     }

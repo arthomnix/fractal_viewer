@@ -1,7 +1,7 @@
 mod compat;
 
-use std::fmt::{Display, Formatter};
 use base64::{engine::general_purpose, Engine};
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug, serde::Deserialize)]
 pub enum InvalidSettingsImportError {
@@ -33,7 +33,6 @@ impl std::error::Error for InvalidSettingsImportError {
         self.to_str()
     }
 }
-
 
 fn get_major_minor_version() -> String {
     let mut version_iterator = env!("CARGO_PKG_VERSION").split('.');
@@ -89,7 +88,6 @@ impl UserSettings {
             .next()
             .ok_or(InvalidSettingsImportError::InvalidFormat)?;
 
-
         let this_ver = get_major_minor_version();
         match major_minor_version {
             s if s == &this_ver => {
@@ -99,7 +97,7 @@ impl UserSettings {
                 let result = bincode::deserialize::<'_, Self>(bytes.as_slice())
                     .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
                 Ok(result)
-            },
+            }
             "0.5" => Ok(compat::v0_5::UserSettings::import_string(base64)?.into()),
             "0.3" => Ok(compat::v0_3::UserSettings::import_string(base64)?.into()),
             "0.4" => Ok(compat::v0_4::UserSettings::import_string(base64)?.into()),
