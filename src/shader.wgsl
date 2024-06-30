@@ -27,16 +27,6 @@ fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) ve
     return vertex_positions[in_vertex_index];
 }
 
-// deprecated: use length(z)^2 instead
-fn cabs_squared(z: vec2<f32>) -> f32 {
-    return (z.x * z.x + z.y * z.y);
-}
-
-// deprecated: use length(z) instead
-fn cabs(z: vec2<f32>) -> f32 {
-    return length(z);
-}
-
 fn cpow(z: vec2<f32>, p: f32) -> vec2<f32> {
     let r: f32 = length(z);
     let arg: f32 = atan2(z.y, z.x);
