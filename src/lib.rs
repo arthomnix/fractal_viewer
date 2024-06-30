@@ -63,7 +63,7 @@ impl FractalViewerApp {
         let import_error = None;
 
         #[cfg(target_arch = "wasm32")]
-        let (settings, import_error) = match web_sys::window()
+        let (mut settings, mut import_error) = match web_sys::window()
             .and_then(|w| match w.location().href().ok() {
                 Some(s) if s.contains('?') => Some(s),
                 _ => None,
@@ -74,6 +74,12 @@ impl FractalViewerApp {
             Ok(settings) => (settings, None),
             Err(e) => (UserSettings::default(), Some(e.to_string())),
         };
+
+        #[cfg(target_arch = "wasm32")]
+        if let Err(e) = validate_shader(&settings.equation, &settings.colour) {
+            import_error = Some(format!("Invalid equation or colour expression: {e}"));
+            settings = UserSettings::default();
+        }
 
         let wgpu_render_state = cc.wgpu_render_state.as_ref()?;
         let device = &wgpu_render_state.device;
