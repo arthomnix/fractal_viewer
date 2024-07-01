@@ -221,6 +221,7 @@ impl FractalViewerApp {
         let callback = FvRenderCallback {
             uniforms,
             shader_recompilation_options: if self.recompile_shader {
+                self.recompile_shader = false;
                 Some((self.settings.equation.clone(), self.settings.colour.clone()))
             } else {
                 None
