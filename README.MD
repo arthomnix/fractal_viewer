@@ -12,6 +12,9 @@ Custom functions should be valid WGSL expressions, with the following extra func
 * `cdiv(vec2<f32>, vec2<f32>) -> vec2<f32>`: divide two complex numbers
 * `cmul(vec2<f32>, vec2<f32>) -> vec2<f32>`: multiply two complex numbers
 
+* `rgb(u32) -> vec3<f32>` - Convert a hex RGB colour (in the form `0xRRGGBBu`) to the format WebGPU expects
+* `hsv_rgb(vec3<f32>) -> vec3<f32>` - Convert an HSV colour to RGB
+
 All builtin WGSL functions are also available.
 
 ## Note on Git history
