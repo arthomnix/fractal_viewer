@@ -92,6 +92,14 @@ fn hsv_rgb(hsv: vec3<f32>) -> vec3<f32> {
     }
 }
 
+fn rgb(rgb: u32) -> vec3<f32> {
+    return vec3(
+        f32((rgb & 0xFF0000) >> 16),
+        f32((rgb & 0x00FF00) >> 8 ),
+        f32((rgb & 0x0000FF)      ),
+    ) / 255.0;
+}
+
 fn get_fragment_colour(c: vec2<f32>) -> vec4<f32> {
     var i: i32 = 0;
     var z: vec2<f32>;

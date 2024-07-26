@@ -3,7 +3,11 @@ mod uniforms;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
-use crate::settings::UserSettings;
+use egui_wgpu::wgpu as wgpu;
+#[cfg(not(target_arch = "wasm32"))]
+use egui_wgpu::wgpu::naga as naga;
+
+use crate::settings::{CustomShaderData, UserSettings};
 use crate::uniforms::{calculate_scale, Uniforms};
 #[allow(unused_imports)] // eframe::egui::ViewportCommand used on native but not web
 use eframe::egui::{
@@ -27,10 +31,8 @@ use wgpu::{
 
 static SHADER: &str = include_str!("shader.wgsl");
 
-fn validate_shader(equation: &str, colour: &str) -> Result<(), String> {
-    let shader_src = SHADER
-        .replace("REPLACE_FRACTAL_EQN", equation)
-        .replace("REPLACE_COLOR", colour);
+fn validate_shader(options: &CustomShaderData) -> Result<(), String> {
+    let shader_src = options.shader();
 
     let module = naga::front::wgsl::Frontend::new()
         .parse(&shader_src)
@@ -78,7 +80,7 @@ impl FractalViewerApp {
         };
 
         #[cfg(target_arch = "wasm32")]
-        if let Err(e) = validate_shader(&settings.equation, &settings.colour) {
+        if let Err(e) = validate_shader(&settings.shader_data) {
             import_error = Some(format!("Invalid equation or colour expression: {e}"));
             settings = UserSettings::default();
         }
@@ -120,12 +122,7 @@ impl FractalViewerApp {
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("fv_shader"),
-            source: ShaderSource::Wgsl(
-                SHADER
-                    .replace("REPLACE_FRACTAL_EQN", &settings.equation)
-                    .replace("REPLACE_COLOR", &settings.colour)
-                    .into(),
-            ),
+            source: ShaderSource::Wgsl(settings.shader_data.shader().into()),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -140,11 +137,13 @@ impl FractalViewerApp {
             vertex: VertexState {
                 module: &shader,
                 entry_point: "vs_main",
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
+                compilation_options: Default::default(),
                 targets: &[Some(wgpu_render_state.target_format.into())],
             }),
             primitive: PrimitiveState::default(),
@@ -222,7 +221,7 @@ impl FractalViewerApp {
             uniforms,
             shader_recompilation_options: if self.recompile_shader {
                 self.recompile_shader = false;
-                Some((self.settings.equation.clone(), self.settings.colour.clone()))
+                Some(self.settings.shader_data.clone())
             } else {
                 None
             },
@@ -374,20 +373,20 @@ impl eframe::App for FractalViewerApp {
                         .selected_text("Select default equation")
                         .show_ui(ui, |ui| {
                             if ui.selectable_value(
-                                &mut self.settings.equation,
+                                &mut self.settings.shader_data.equation,
                                 "csquare(z) + c".to_string(),
                                 "Mandelbrot set",
                             ).clicked() || ui.selectable_value(
-                                &mut self.settings.equation,
+                                &mut self.settings.shader_data.equation,
                                 "csquare(abs(z)) + c".to_string(),
                                 "Burning ship fractal",
                             ).clicked() || ui.selectable_value(
-                                &mut self.settings.equation,
+                                &mut self.settings.shader_data.equation,
                                 "cdiv(cmul(csquare(z), z), vec2<f32>(1.0, 0.0) + z * z) + c"
                                     .to_string(),
                                 "Feather fractal",
                             ).clicked() || ui.selectable_value(
-                                &mut self.settings.equation,
+                                &mut self.settings.shader_data.equation,
                                 "csquare(vec2<f32>(z.x, -z.y)) + c".to_string(),
                                 "Tricorn fractal",
                             ).clicked() {
@@ -395,19 +394,25 @@ impl eframe::App for FractalViewerApp {
                             }
                         });
                     ui.label("...Or edit it yourself!");
-                    if ui.add(TextEdit::singleline(&mut self.settings.equation).desired_width(ui.max_rect().width())).changed() {
+                    if ui.add(TextEdit::singleline(&mut self.settings.shader_data.equation).desired_width(ui.max_rect().width())).changed() {
                         self.recompile_shader = true;
                     };
                     ui.label("Colour expression:");
                     ui.horizontal(|ui| {
-                        if ui.text_edit_singleline(&mut self.settings.colour).changed() {
+                        if ui.text_edit_singleline(&mut self.settings.shader_data.colour).changed() {
                             self.recompile_shader = true;
                         };
                         if ui.button("Reset").clicked() {
-                            self.settings.colour = "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))".to_string();
+                            self.settings.shader_data.colour = "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))".to_string();
                             self.recompile_shader = true;
                         }
                     });
+
+                    ui.label("Additional code to include in shader:");
+                    if ui.add(TextEdit::multiline(&mut self.settings.shader_data.additional).code_editor()).changed() {
+                        self.recompile_shader = true;
+                    };
+
                     ui.checkbox(&mut self.settings.internal_black, "Always colour inside of set black");
 
                     if let Some(e) = &self.shader_error {
@@ -464,7 +469,7 @@ impl eframe::App for FractalViewerApp {
 
         // Validate custom expressions
         if self.recompile_shader {
-            if let Err(e) = validate_shader(&self.settings.equation, &self.settings.colour) {
+            if let Err(e) = validate_shader(&self.settings.shader_data) {
                 self.shader_error = Some(e);
                 self.recompile_shader = false;
             } else {
@@ -493,15 +498,10 @@ struct FvRenderer {
 
 impl FvRenderer {
     fn prepare(&mut self, queue: &Queue, callback: &FvRenderCallback) {
-        if let Some((equation, colour)) = &callback.shader_recompilation_options {
+        if let Some(data) = &callback.shader_recompilation_options {
             let shader = self.device.create_shader_module(ShaderModuleDescriptor {
                 label: Some("fv_shader"),
-                source: ShaderSource::Wgsl(
-                    SHADER
-                        .replace("REPLACE_FRACTAL_EQN", &equation)
-                        .replace("REPLACE_COLOR", &colour)
-                        .into(),
-                ),
+                source: ShaderSource::Wgsl(data.shader().into()),
             });
 
             let pipeline_layout = self
@@ -520,11 +520,13 @@ impl FvRenderer {
                     vertex: VertexState {
                         module: &shader,
                         entry_point: "vs_main",
+                        compilation_options: Default::default(),
                         buffers: &[],
                     },
                     fragment: Some(FragmentState {
                         module: &shader,
                         entry_point: "fs_main",
+                        compilation_options: Default::default(),
                         targets: &[Some(self.target_format.clone())],
                     }),
                     primitive: PrimitiveState::default(),
@@ -552,7 +554,7 @@ impl FvRenderer {
 
 struct FvRenderCallback {
     uniforms: Uniforms,
-    shader_recompilation_options: Option<(String, String)>,
+    shader_recompilation_options: Option<CustomShaderData>,
 }
 
 impl egui_wgpu::CallbackTrait for FvRenderCallback {

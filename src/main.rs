@@ -7,6 +7,6 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         "fractal_viewer",
         options,
-        Box::new(|cc| Box::new(FractalViewerApp::new(cc).unwrap())),
+        Box::new(|cc| Ok(Box::new(FractalViewerApp::new(cc).unwrap()))),
     )
 }

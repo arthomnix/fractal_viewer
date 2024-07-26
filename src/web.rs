@@ -9,7 +9,7 @@ async fn wasm_main() -> Result<(), JsValue> {
         .start(
             "fv_canvas",
             eframe::WebOptions::default(),
-            Box::new(|cc| Box::new(FractalViewerApp::new(cc).unwrap())),
+            Box::new(|cc| Ok(Box::new(FractalViewerApp::new(cc).unwrap()))),
         )
         .await
 }
