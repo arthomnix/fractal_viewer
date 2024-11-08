@@ -1,6 +1,6 @@
 [package]
 name = "fractal_viewer"
-version = "2.1.0"
+version = "2.1.1"
 edition = "2021"
 description = "Cross-platform GPU-accelerated viewer for the Mandelbrot set and related fractals"
 repository = "https://github.com/arthomnix/fractal_viewer"
@@ -14,9 +14,9 @@ path = "src/main.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-eframe = { version = "0.28", default-features = false, features = [ "wgpu", "accesskit", "default_fonts", "wayland", "web_screen_reader" ] }
-egui-wgpu = "0.28"
-wgpu = { version = "0.20", features = ["webgpu", "webgl"] }
+eframe = { version = "0.29", default-features = false, features = [ "wgpu", "accesskit", "default_fonts", "wayland", "web_screen_reader" ] }
+egui-wgpu = "0.29"
+wgpu = { version = "22.1", features = ["webgpu", "webgl"] }
 log = "0.4"
 env_logger = "0.11"
 bytemuck = { version = "1.16", features = [ "derive" ] }
@@ -35,4 +35,4 @@ console_log = { version = "1.0", features = [ "color" ] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [ "Window", "Location", "Document", "Element" ] }
-naga = "0.20"
+naga = "22.1"

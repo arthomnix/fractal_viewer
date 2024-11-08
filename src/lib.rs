@@ -150,6 +150,7 @@ impl FractalViewerApp {
             depth_stencil: None,
             multisample: MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
         wgpu_render_state
@@ -533,6 +534,7 @@ impl FvRenderer {
                     depth_stencil: None,
                     multisample: MultisampleState::default(),
                     multiview: None,
+                    cache: None,
                 });
 
             self.pipeline = pipeline;
@@ -545,7 +547,7 @@ impl FvRenderer {
         );
     }
 
-    fn paint<'rp>(&'rp self, render_pass: &mut RenderPass<'rp>) {
+    fn paint(&self, render_pass: &mut RenderPass<'static>) {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
         render_pass.draw(0..6, 0..1);
@@ -571,11 +573,11 @@ impl egui_wgpu::CallbackTrait for FvRenderCallback {
         vec![]
     }
 
-    fn paint<'a>(
-        &'a self,
+    fn paint(
+        &self,
         _info: PaintCallbackInfo,
-        render_pass: &mut RenderPass<'a>,
-        callback_resources: &'a CallbackResources,
+        render_pass: &mut RenderPass<'static>,
+        callback_resources: &CallbackResources,
     ) {
         let renderer: &FvRenderer = callback_resources.get().unwrap();
         renderer.paint(render_pass);
