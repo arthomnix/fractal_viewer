@@ -161,12 +161,11 @@ pub(crate) mod v0_5 {
     }
 }
 
-
 pub(crate) mod v2_0 {
     use crate::settings::{CustomShaderData, InvalidSettingsImportError};
 
-    use base64::Engine;
     use base64::engine::general_purpose;
+    use base64::Engine;
 
     #[derive(Clone, serde::Serialize, serde::Deserialize)]
     pub(crate) struct UserSettings {

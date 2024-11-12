@@ -1,8 +1,8 @@
 mod compat;
 
+use crate::SHADER;
 use base64::{engine::general_purpose, Engine};
 use std::fmt::{Display, Formatter};
-use crate::SHADER;
 
 #[derive(Debug, serde::Deserialize)]
 pub enum InvalidSettingsImportError {
@@ -127,7 +127,8 @@ impl Default for CustomShaderData {
     fn default() -> Self {
         Self {
             equation: "csquare(z) + c".to_string(),
-            colour: "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))".to_string(),
+            colour: "hsv_rgb(vec3(log(n + 1.0) / log(f32(uniforms.iterations) + 1.0), 0.8, 0.8))"
+                .to_string(),
             additional: String::new(),
         }
     }

@@ -3,9 +3,9 @@ mod uniforms;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
-use egui_wgpu::wgpu as wgpu;
+use egui_wgpu::wgpu;
 #[cfg(not(target_arch = "wasm32"))]
-use egui_wgpu::wgpu::naga as naga;
+use egui_wgpu::wgpu::naga;
 
 use crate::settings::{CustomShaderData, UserSettings};
 use crate::uniforms::{calculate_scale, Uniforms};
@@ -120,50 +120,23 @@ impl FractalViewerApp {
             }],
         });
 
-        let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("fv_shader"),
-            source: ShaderSource::Wgsl(settings.shader_data.shader().into()),
-        });
+        let renderer_state = RendererState {
+            device: Arc::clone(device),
+            target_format: wgpu_render_state.target_format.into(),
+            bind_group_layout: uniform_bind_group_layout,
+            bind_group: uniform_bind_group,
+            uniform_buffer,
+        };
 
-        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("fv_pipeline_layout"),
-            bind_group_layouts: &[&uniform_bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("fv_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu_render_state.target_format.into())],
-            }),
-            primitive: PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+        let pipeline = renderer_state.generate_pipeline(&settings.shader_data);
 
         wgpu_render_state
             .renderer
             .write()
             .callback_resources
             .insert(FvRenderer {
-                device: Arc::clone(device),
                 pipeline,
-                target_format: wgpu_render_state.target_format.into(),
-                bind_group: uniform_bind_group,
-                bind_group_layout: uniform_bind_group_layout,
-                uniform_buffer,
+                state: renderer_state,
             });
 
         let adapter_info = wgpu_render_state.adapter.get_info();
@@ -488,60 +461,67 @@ impl eframe::App for FractalViewerApp {
     }
 }
 
-struct FvRenderer {
+struct RendererState {
     device: Arc<Device>,
-    pipeline: RenderPipeline,
     target_format: ColorTargetState,
     bind_group_layout: BindGroupLayout,
     bind_group: BindGroup,
     uniform_buffer: Buffer,
 }
 
+impl RendererState {
+    fn generate_pipeline(&self, shader_data: &CustomShaderData) -> RenderPipeline {
+        let shader = self.device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("fv_shader"),
+            source: ShaderSource::Wgsl(shader_data.shader().into()),
+        });
+
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("fv_pipeline_layout"),
+                bind_group_layouts: &[&self.bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        self.device
+            .create_render_pipeline(&RenderPipelineDescriptor {
+                label: Some("fv_pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: VertexState {
+                    module: &shader,
+                    entry_point: "vs_main",
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                fragment: Some(FragmentState {
+                    module: &shader,
+                    entry_point: "fs_main",
+                    compilation_options: Default::default(),
+                    targets: &[Some(self.target_format.clone())],
+                }),
+                primitive: PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            })
+    }
+}
+
+struct FvRenderer {
+    pipeline: RenderPipeline,
+    state: RendererState,
+}
+
 impl FvRenderer {
     fn prepare(&mut self, queue: &Queue, callback: &FvRenderCallback) {
         if let Some(data) = &callback.shader_recompilation_options {
-            let shader = self.device.create_shader_module(ShaderModuleDescriptor {
-                label: Some("fv_shader"),
-                source: ShaderSource::Wgsl(data.shader().into()),
-            });
-
-            let pipeline_layout = self
-                .device
-                .create_pipeline_layout(&PipelineLayoutDescriptor {
-                    label: Some("fv_pipeline_layout"),
-                    bind_group_layouts: &[&self.bind_group_layout],
-                    push_constant_ranges: &[],
-                });
-
-            let pipeline = self
-                .device
-                .create_render_pipeline(&RenderPipelineDescriptor {
-                    label: Some("fv_pipeline"),
-                    layout: Some(&pipeline_layout),
-                    vertex: VertexState {
-                        module: &shader,
-                        entry_point: "vs_main",
-                        compilation_options: Default::default(),
-                        buffers: &[],
-                    },
-                    fragment: Some(FragmentState {
-                        module: &shader,
-                        entry_point: "fs_main",
-                        compilation_options: Default::default(),
-                        targets: &[Some(self.target_format.clone())],
-                    }),
-                    primitive: PrimitiveState::default(),
-                    depth_stencil: None,
-                    multisample: MultisampleState::default(),
-                    multiview: None,
-                    cache: None,
-                });
-
-            self.pipeline = pipeline;
+            self.pipeline = self.state.generate_pipeline(data);
         }
 
         queue.write_buffer(
-            &self.uniform_buffer,
+            &self.state.uniform_buffer,
             0,
             bytemuck::cast_slice(&[callback.uniforms]),
         );
@@ -549,7 +529,7 @@ impl FvRenderer {
 
     fn paint(&self, render_pass: &mut RenderPass<'static>) {
         render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.bind_group, &[]);
+        render_pass.set_bind_group(0, &self.state.bind_group, &[]);
         render_pass.draw(0..6, 0..1);
     }
 }
