@@ -1,5 +1,5 @@
-use eframe::NativeOptions;
 use fractal_viewer::FractalViewerApp;
+use eframe::NativeOptions;
 
 fn main() -> Result<(), eframe::Error> {
     env_logger::init();

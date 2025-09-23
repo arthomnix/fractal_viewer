@@ -22,8 +22,9 @@ pub(crate) mod v0_3 {
             let bytes = general_purpose::STANDARD
                 .decode(string)
                 .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
-            let result = bincode::deserialize::<'_, Self>(bytes.as_slice())
-                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
+            let result = bincode::serde::decode_from_slice::<Self, _>(bytes.as_slice(), bincode::config::legacy())
+                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?
+                .0;
             Ok(result)
         }
     }
@@ -75,8 +76,9 @@ pub(crate) mod v0_4 {
             let bytes = general_purpose::STANDARD
                 .decode(string)
                 .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
-            let result = bincode::deserialize::<'_, Self>(bytes.as_slice())
-                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
+            let result = bincode::serde::decode_from_slice::<Self, _>(bytes.as_slice(), bincode::config::legacy())
+                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?
+                .0;
             Ok(result)
         }
     }
@@ -132,8 +134,9 @@ pub(crate) mod v0_5 {
             let bytes = general_purpose::STANDARD
                 .decode(string)
                 .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
-            let result = bincode::deserialize::<'_, Self>(bytes.as_slice())
-                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
+            let result = bincode::serde::decode_from_slice::<Self, _>(bytes.as_slice(), bincode::config::legacy())
+                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?
+                .0;
             Ok(result)
         }
     }
@@ -187,8 +190,9 @@ pub(crate) mod v2_0 {
             let bytes = general_purpose::STANDARD
                 .decode(string)
                 .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
-            let result = bincode::deserialize::<'_, Self>(bytes.as_slice())
-                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
+            let result = bincode::serde::decode_from_slice::<Self, _>(bytes.as_slice(), bincode::config::legacy())
+                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?
+                .0;
             Ok(result)
         }
     }

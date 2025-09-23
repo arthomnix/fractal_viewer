@@ -18,7 +18,6 @@ use egui_wgpu::{CallbackResources, ScreenDescriptor};
 use instant::Instant;
 use naga::valid::{Capabilities, ValidationFlags};
 use std::collections::VecDeque;
-use std::sync::Arc;
 use std::time::Duration;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
@@ -121,14 +120,13 @@ impl FractalViewerApp {
         });
 
         let renderer_state = RendererState {
-            device: Arc::clone(device),
             target_format: wgpu_render_state.target_format.into(),
             bind_group_layout: uniform_bind_group_layout,
             bind_group: uniform_bind_group,
             uniform_buffer,
         };
 
-        let pipeline = renderer_state.generate_pipeline(&settings.shader_data);
+        let pipeline = renderer_state.generate_pipeline(device, &settings.shader_data);
 
         wgpu_render_state
             .renderer
@@ -141,7 +139,7 @@ impl FractalViewerApp {
 
         let adapter_info = wgpu_render_state.adapter.get_info();
         let backend = match adapter_info.backend {
-            Backend::Empty => "Empty",
+            Backend::Noop => "Empty",
             Backend::Vulkan => "Vulkan",
             Backend::Metal => "Metal",
             Backend::Dx12 => "DirectX 12",
@@ -404,10 +402,10 @@ impl eframe::App for FractalViewerApp {
                         .default_open(self.import_error.is_some())
                         .show(ui, |ui| {
                             if ui.button("Export to clipboard").clicked() {
-                                ui.output_mut(|o| o.copied_text = self.settings.export_string());
+                                ctx.copy_text(self.settings.export_string());
                             }
                             if ui.button("Export link to clipboard").clicked() {
-                                ui.output_mut(|o| o.copied_text = format!("{}?{}", option_env!("SITE_LINK").unwrap_or("https://arthomnix.dev/fractal/"), self.settings.export_string()));
+                                ctx.copy_text(format!("{}?{}", option_env!("SITE_LINK").unwrap_or("https://arthomnix.dev/fractal/"), self.settings.export_string()));
                             }
                             // Reading clipboard doesn't work in Firefox, so we only support importing from link on web
                             #[cfg(not(target_arch = "wasm32"))]
@@ -462,7 +460,6 @@ impl eframe::App for FractalViewerApp {
 }
 
 struct RendererState {
-    device: Arc<Device>,
     target_format: ColorTargetState,
     bind_group_layout: BindGroupLayout,
     bind_group: BindGroup,
@@ -470,33 +467,32 @@ struct RendererState {
 }
 
 impl RendererState {
-    fn generate_pipeline(&self, shader_data: &CustomShaderData) -> RenderPipeline {
-        let shader = self.device.create_shader_module(ShaderModuleDescriptor {
+    fn generate_pipeline(&self, device: &Device, shader_data: &CustomShaderData) -> RenderPipeline {
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("fv_shader"),
             source: ShaderSource::Wgsl(shader_data.shader().into()),
         });
 
-        let pipeline_layout = self
-            .device
+        let pipeline_layout = device
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("fv_pipeline_layout"),
                 bind_group_layouts: &[&self.bind_group_layout],
                 push_constant_ranges: &[],
             });
 
-        self.device
+        device
             .create_render_pipeline(&RenderPipelineDescriptor {
                 label: Some("fv_pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex: VertexState {
                     module: &shader,
-                    entry_point: "vs_main",
+                    entry_point: Some("vs_main"),
                     compilation_options: Default::default(),
                     buffers: &[],
                 },
                 fragment: Some(FragmentState {
                     module: &shader,
-                    entry_point: "fs_main",
+                    entry_point: Some("fs_main"),
                     compilation_options: Default::default(),
                     targets: &[Some(self.target_format.clone())],
                 }),
@@ -515,9 +511,9 @@ struct FvRenderer {
 }
 
 impl FvRenderer {
-    fn prepare(&mut self, queue: &Queue, callback: &FvRenderCallback) {
+    fn prepare(&mut self, device: &Device, queue: &Queue, callback: &FvRenderCallback) {
         if let Some(data) = &callback.shader_recompilation_options {
-            self.pipeline = self.state.generate_pipeline(data);
+            self.pipeline = self.state.generate_pipeline(device, data);
         }
 
         queue.write_buffer(
@@ -542,14 +538,14 @@ struct FvRenderCallback {
 impl egui_wgpu::CallbackTrait for FvRenderCallback {
     fn prepare(
         &self,
-        _device: &Device,
+        device: &Device,
         queue: &Queue,
         _screen_descriptor: &ScreenDescriptor,
         _egui_encoder: &mut CommandEncoder,
         callback_resources: &mut CallbackResources,
     ) -> Vec<CommandBuffer> {
         let renderer: &mut FvRenderer = callback_resources.get_mut().unwrap();
-        renderer.prepare(queue, self);
+        renderer.prepare(device, queue, self);
         vec![]
     }
 

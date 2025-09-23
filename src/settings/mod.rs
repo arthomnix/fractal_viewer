@@ -76,7 +76,7 @@ pub(crate) struct UserSettings {
 
 impl UserSettings {
     pub(crate) fn export_string(&self) -> String {
-        let encoded = bincode::serialize(self).unwrap();
+        let encoded = bincode::serde::encode_to_vec(self, bincode::config::legacy()).unwrap();
         format!(
             "{};{}",
             get_major_minor_version(),
@@ -110,8 +110,9 @@ impl UserSettings {
                 let bytes = general_purpose::STANDARD
                     .decode(base64)
                     .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
-                let result = bincode::deserialize::<'_, Self>(bytes.as_slice())
-                    .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?;
+                let result = bincode::serde::decode_from_slice::<Self, _>(bytes.as_slice(), bincode::config::legacy())
+                    .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?
+                    .0;
                 Ok(result)
             }
             "2.0" => Ok(compat::v2_0::UserSettings::import_string(base64)?.into()),
