@@ -269,7 +269,7 @@ impl eframe::App for FractalViewerApp {
                 if self.driver_info.is_empty() {
                     ui.label(format!("Render backend: {}", self.backend));
                 } else {
-                    ui.label(format!("Render backend: {} ({})", self.backend, &self.driver_info));
+                    ui.label(format!("Render backend: {} ({})", self.backend, self.driver_info));
                 }
 
                 ui.label(format!(

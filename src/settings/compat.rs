@@ -34,17 +34,17 @@ pub(in crate::settings) mod v0_3 {
         }
     }
 
-    impl Into<crate::settings::UserSettings> for UserSettings {
-        fn into(self) -> crate::settings::UserSettings {
+    impl From<UserSettings> for crate::settings::UserSettings {
+        fn from(val: UserSettings) -> crate::settings::UserSettings {
             crate::settings::UserSettings {
-                zoom: self.zoom,
-                centre: self.centre,
-                iterations: self.iterations,
-                julia_set: self.julia_set,
-                initial_value: self.initial_value,
-                escape_threshold: self.escape_threshold,
+                zoom: val.zoom,
+                centre: val.centre,
+                iterations: val.iterations,
+                julia_set: val.julia_set,
+                initial_value: val.initial_value,
+                escape_threshold: val.escape_threshold,
                 shader_data: CustomShaderData {
-                    equation: self.equation,
+                    equation: val.equation,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -93,20 +93,20 @@ pub(in crate::settings) mod v0_4 {
         }
     }
 
-    impl Into<crate::settings::UserSettings> for UserSettings {
-        fn into(self) -> crate::settings::UserSettings {
+    impl From<UserSettings> for crate::settings::UserSettings {
+        fn from(val: UserSettings) -> crate::settings::UserSettings {
             crate::settings::UserSettings {
-                zoom: self.zoom,
-                centre: self.centre,
-                iterations: self.iterations,
-                julia_set: self.julia_set,
-                smoothen: self.smoothen,
-                internal_black: self.internal_black,
-                initial_value: self.initial_value,
-                escape_threshold: self.escape_threshold,
+                zoom: val.zoom,
+                centre: val.centre,
+                iterations: val.iterations,
+                julia_set: val.julia_set,
+                smoothen: val.smoothen,
+                internal_black: val.internal_black,
+                initial_value: val.initial_value,
+                escape_threshold: val.escape_threshold,
                 shader_data: CustomShaderData {
-                    equation: self.equation,
-                    colour: self.colour,
+                    equation: val.equation,
+                    colour: val.colour,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -156,24 +156,23 @@ pub(in crate::settings) mod v0_5 {
         }
     }
 
-    impl Into<crate::settings::UserSettings> for UserSettings {
-        fn into(self) -> crate::settings::UserSettings {
+    impl From<UserSettings> for crate::settings::UserSettings {
+        fn from(val: UserSettings) -> crate::settings::UserSettings {
             crate::settings::UserSettings {
-                zoom: self.zoom,
-                centre: self.centre,
-                iterations: self.iterations,
-                julia_set: self.julia_set,
-                smoothen: self.smoothen,
-                internal_black: self.internal_black,
-                initial_value: self.initial_value,
-                escape_threshold: self.escape_threshold,
-                initial_c: self.initial_c,
+                zoom: val.zoom,
+                centre: val.centre,
+                iterations: val.iterations,
+                julia_set: val.julia_set,
+                smoothen: val.smoothen,
+                internal_black: val.internal_black,
+                initial_value: val.initial_value,
+                escape_threshold: val.escape_threshold,
+                initial_c: val.initial_c,
                 shader_data: CustomShaderData {
-                    equation: self.equation,
-                    colour: self.colour,
+                    equation: val.equation,
+                    colour: val.colour,
                     ..Default::default()
                 },
-                ..Default::default()
             }
         }
     }
@@ -217,24 +216,23 @@ pub(in crate::settings) mod v2_0 {
         }
     }
 
-    impl Into<crate::settings::UserSettings> for UserSettings {
-        fn into(self) -> crate::settings::UserSettings {
+    impl From<UserSettings> for crate::settings::UserSettings {
+        fn from(val: UserSettings) -> crate::settings::UserSettings {
             crate::settings::UserSettings {
-                zoom: self.zoom,
-                centre: self.centre,
-                iterations: self.iterations,
-                julia_set: self.julia_set,
-                smoothen: self.smoothen,
-                internal_black: self.internal_black,
-                initial_value: self.initial_value,
-                escape_threshold: self.escape_threshold,
-                initial_c: self.initial_c,
+                zoom: val.zoom,
+                centre: val.centre,
+                iterations: val.iterations,
+                julia_set: val.julia_set,
+                smoothen: val.smoothen,
+                internal_black: val.internal_black,
+                initial_value: val.initial_value,
+                escape_threshold: val.escape_threshold,
+                initial_c: val.initial_c,
                 shader_data: CustomShaderData {
-                    equation: self.equation,
-                    colour: self.colour,
+                    equation: val.equation,
+                    colour: val.colour,
                     ..Default::default()
                 },
-                ..Default::default()
             }
         }
     }

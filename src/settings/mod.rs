@@ -127,7 +127,7 @@ impl UserSettings {
 
         let this_ver = get_major_minor_version();
         match major_minor_version {
-            s if s == &this_ver => Ok(UserSettings::import_base64(base64, false)?),
+            s if s == this_ver => Ok(UserSettings::import_base64(base64, false)?),
             "2.1" => Ok(UserSettings::import_base64(base64, true)?),
             "2.0" => Ok(compat::v2_0::UserSettings::import_base64(base64)?.into()),
             "0.5" => Ok(compat::v0_5::UserSettings::import_base64(base64)?.into()),
