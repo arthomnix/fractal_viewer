@@ -19,6 +19,7 @@ use instant::Instant;
 use naga::valid::{Capabilities, ValidationFlags};
 use std::collections::VecDeque;
 use std::time::Duration;
+use eframe::egui::Ui;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
     Backend, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
@@ -87,7 +88,7 @@ impl FractalViewerApp {
         let wgpu_render_state = cc.wgpu_render_state.as_ref()?;
         let device = &wgpu_render_state.device;
 
-        let size = cc.egui_ctx.screen_rect().size();
+        let size = cc.egui_ctx.content_rect().size();
 
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("fv_uniform_buffer"),
@@ -142,7 +143,7 @@ impl FractalViewerApp {
             Backend::Noop => "Empty",
             Backend::Vulkan => "Vulkan",
             Backend::Metal => "Metal",
-            Backend::Dx12 => "DirectX 12",
+            Backend::Dx12 => "Direui 12",
             Backend::Gl => "WebGL/OpenGL",
             Backend::BrowserWebGpu => "WebGPU",
         };
@@ -184,7 +185,7 @@ impl FractalViewerApp {
                 (pointer_pos.y - size.y / 2.0) * scale + self.settings.centre[1];
         }
 
-        let scroll = ui.input(|i| i.raw_scroll_delta);
+        let scroll = ui.input(|i| i.smooth_scroll_delta);
         self.settings.zoom += self.settings.zoom * (scroll.y / 300.0).max(-0.9);
 
         let uniforms = Uniforms::new(size, &self.settings);
@@ -205,7 +206,7 @@ impl FractalViewerApp {
 }
 
 impl eframe::App for FractalViewerApp {
-    fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
+    fn ui(&mut self, ui: &mut Ui, _frame: &mut Frame) {
         let fps = self.fps_samples.iter().sum::<f32>() / self.fps_samples.len() as f32;
         if self.last_title_update.is_none()
             || self
@@ -222,7 +223,7 @@ impl eframe::App for FractalViewerApp {
             );
 
             #[cfg(not(target_arch = "wasm32"))]
-            ctx.send_viewport_cmd(ViewportCommand::Title(title));
+            ui.send_viewport_cmd(ViewportCommand::Title(title));
 
             #[cfg(target_arch = "wasm32")]
             if let Some(title_element) = web_sys::window()
@@ -236,23 +237,23 @@ impl eframe::App for FractalViewerApp {
         }
 
         #[cfg(not(target_arch = "wasm32"))]
-        if ctx.input(|i| i.key_pressed(Key::F11)) {
-            let current_fullscreen = ctx.input(|i| i.viewport().fullscreen.unwrap());
-            ctx.send_viewport_cmd(ViewportCommand::Fullscreen(!current_fullscreen));
+        if ui.input(|i| i.key_pressed(Key::F11)) {
+            let current_fullscreen = ui.input(|i| i.viewport().fullscreen.unwrap());
+            ui.send_viewport_cmd(ViewportCommand::Fullscreen(!current_fullscreen));
         }
 
-        if ctx.input(|i| i.key_pressed(Key::F1)) {
+        if ui.input(|i| i.key_pressed(Key::F1)) {
             self.show_ui = !self.show_ui;
         }
 
         egui::CentralPanel::default()
             .frame(egui::Frame::default().inner_margin(0.0))
-            .show(ctx, |ui| self.paint_fractal(ui));
+            .show(ui, |ui| self.paint_fractal(ui));
 
         egui::Window::new(env!("CARGO_PKG_NAME"))
             .title_bar(true)
             .open(&mut self.show_ui)
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 ui.label(format!(
                     "Version {} ({}{}{})",
                     env!("CARGO_PKG_VERSION"),
@@ -402,10 +403,10 @@ impl eframe::App for FractalViewerApp {
                         .default_open(self.import_error.is_some())
                         .show(ui, |ui| {
                             if ui.button("Export to clipboard").clicked() {
-                                ctx.copy_text(self.settings.export_string());
+                                ui.copy_text(self.settings.export_string());
                             }
                             if ui.button("Export link to clipboard").clicked() {
-                                ctx.copy_text(format!("{}?{}", option_env!("SITE_LINK").unwrap_or("https://arthomnix.dev/fractal/"), self.settings.export_string()));
+                                ui.copy_text(format!("{}?{}", option_env!("SITE_LINK").unwrap_or("https://arthomnix.dev/fractal/"), self.settings.export_string()));
                             }
                             // Reading clipboard doesn't work in Firefox, so we only support importing from link on web
                             #[cfg(not(target_arch = "wasm32"))]
@@ -476,8 +477,8 @@ impl RendererState {
         let pipeline_layout = device
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("fv_pipeline_layout"),
-                bind_group_layouts: &[&self.bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&self.bind_group_layout)],
+                immediate_size: 0,
             });
 
         device
@@ -499,7 +500,7 @@ impl RendererState {
                 primitive: PrimitiveState::default(),
                 depth_stencil: None,
                 multisample: MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
     }

@@ -1,6 +1,6 @@
 [package]
 name = "fractal_viewer"
-version = "2.1.2"
+version = "2.2.0-alpha"
 edition = "2021"
 description = "Cross-platform GPU-accelerated viewer for the Mandelbrot set and related fractals"
 repository = "https://github.com/arthomnix/fractal_viewer"
@@ -14,15 +14,14 @@ path = "src/main.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-eframe = { version = "0.32", default-features = false, features = [ "wgpu", "accesskit", "default_fonts", "wayland", "web_screen_reader" ] }
-egui-wgpu = "0.32"
-wgpu = { version = "25.0", features = ["webgpu", "webgl"] }
-log = "0.4"
+eframe = { version = "0.36", default-features = false, features = [ "wgpu", "accesskit", "default_fonts", "wayland", "web_screen_reader" ] }
+egui-wgpu = "0.36"
+wgpu = { version = "30.0", features = ["webgpu", "webgl"] }
 env_logger = "0.11"
-bytemuck = { version = "1.23", features = [ "derive" ] }
-bincode = { version = "2.0", features = ["serde"] }
-serde = { version = "1.0", features = [ "derive"] }
-base64 = "0.22"
+bytemuck = { version = "1.25", features = [ "derive" ] }
+bincode-next = { version = "3.1", features = [ "serde" ] }
+serde = { version = "1.0", features = [ "derive" ] }
+base64 = "0.23"
 url = "2.5"
 instant = { version = "0.1", features = [ "wasm-bindgen" ] }
 
@@ -35,4 +34,4 @@ console_log = { version = "1.0", features = [ "color" ] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [ "Window", "Location", "Document", "Element" ] }
-naga = "25.0"
+naga = "30.0"
