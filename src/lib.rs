@@ -9,6 +9,7 @@ use egui_wgpu::wgpu::naga;
 
 use crate::settings::{CustomShaderData, UserSettings};
 use crate::uniforms::{calculate_scale, Uniforms};
+use eframe::egui::Ui;
 #[allow(unused_imports)] // eframe::egui::ViewportCommand used on native but not web
 use eframe::egui::{
     Color32, Context, Key, PaintCallbackInfo, PointerButton, TextEdit, ViewportCommand,
@@ -19,7 +20,6 @@ use instant::Instant;
 use naga::valid::{Capabilities, ValidationFlags};
 use std::collections::VecDeque;
 use std::time::Duration;
-use eframe::egui::Ui;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
     Backend, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
@@ -474,35 +474,33 @@ impl RendererState {
             source: ShaderSource::Wgsl(shader_data.shader().into()),
         });
 
-        let pipeline_layout = device
-            .create_pipeline_layout(&PipelineLayoutDescriptor {
-                label: Some("fv_pipeline_layout"),
-                bind_group_layouts: &[Some(&self.bind_group_layout)],
-                immediate_size: 0,
-            });
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("fv_pipeline_layout"),
+            bind_group_layouts: &[Some(&self.bind_group_layout)],
+            immediate_size: 0,
+        });
 
-        device
-            .create_render_pipeline(&RenderPipelineDescriptor {
-                label: Some("fv_pipeline"),
-                layout: Some(&pipeline_layout),
-                vertex: VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    compilation_options: Default::default(),
-                    buffers: &[],
-                },
-                fragment: Some(FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    compilation_options: Default::default(),
-                    targets: &[Some(self.target_format.clone())],
-                }),
-                primitive: PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: MultisampleState::default(),
-                multiview_mask: None,
-                cache: None,
-            })
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("fv_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(self.target_format.clone())],
+            }),
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        })
     }
 }
 

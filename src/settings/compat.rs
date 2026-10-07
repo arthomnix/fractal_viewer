@@ -18,13 +18,18 @@ pub(in crate::settings) mod v0_3 {
     }
 
     impl UserSettings {
-        pub(in crate::settings) fn import_base64(string: &str) -> Result<Self, InvalidSettingsImportError> {
+        pub(in crate::settings) fn import_base64(
+            string: &str,
+        ) -> Result<Self, InvalidSettingsImportError> {
             let bytes = general_purpose::STANDARD
                 .decode(string)
                 .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
-            let result = bincode_next::serde::decode_from_slice::<Self, _>(bytes.as_slice(), bincode_next::config::legacy())
-                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?
-                .0;
+            let result = bincode_next::serde::decode_from_slice::<Self, _>(
+                bytes.as_slice(),
+                bincode_next::config::legacy(),
+            )
+            .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?
+            .0;
             Ok(result)
         }
     }
@@ -72,13 +77,18 @@ pub(in crate::settings) mod v0_4 {
     }
 
     impl UserSettings {
-        pub(in crate::settings) fn import_base64(string: &str) -> Result<Self, InvalidSettingsImportError> {
+        pub(in crate::settings) fn import_base64(
+            string: &str,
+        ) -> Result<Self, InvalidSettingsImportError> {
             let bytes = general_purpose::STANDARD
                 .decode(string)
                 .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
-            let result = bincode_next::serde::decode_from_slice::<Self, _>(bytes.as_slice(), bincode_next::config::legacy())
-                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?
-                .0;
+            let result = bincode_next::serde::decode_from_slice::<Self, _>(
+                bytes.as_slice(),
+                bincode_next::config::legacy(),
+            )
+            .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?
+            .0;
             Ok(result)
         }
     }
@@ -130,13 +140,18 @@ pub(in crate::settings) mod v0_5 {
     }
 
     impl UserSettings {
-        pub(in crate::settings) fn import_base64(string: &str) -> Result<Self, InvalidSettingsImportError> {
+        pub(in crate::settings) fn import_base64(
+            string: &str,
+        ) -> Result<Self, InvalidSettingsImportError> {
             let bytes = general_purpose::STANDARD
                 .decode(string)
                 .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
-            let result = bincode_next::serde::decode_from_slice::<Self, _>(bytes.as_slice(), bincode_next::config::legacy())
-                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?
-                .0;
+            let result = bincode_next::serde::decode_from_slice::<Self, _>(
+                bytes.as_slice(),
+                bincode_next::config::legacy(),
+            )
+            .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?
+            .0;
             Ok(result)
         }
     }
@@ -186,13 +201,18 @@ pub(in crate::settings) mod v2_0 {
     }
 
     impl UserSettings {
-        pub(in crate::settings) fn import_base64(string: &str) -> Result<Self, InvalidSettingsImportError> {
+        pub(in crate::settings) fn import_base64(
+            string: &str,
+        ) -> Result<Self, InvalidSettingsImportError> {
             let bytes = general_purpose::STANDARD
                 .decode(string)
                 .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
-            let result = bincode_next::serde::decode_from_slice::<Self, _>(bytes.as_slice(), bincode_next::config::legacy())
-                .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?
-                .0;
+            let result = bincode_next::serde::decode_from_slice::<Self, _>(
+                bytes.as_slice(),
+                bincode_next::config::legacy(),
+            )
+            .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?
+            .0;
             Ok(result)
         }
     }
