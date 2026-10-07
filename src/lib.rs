@@ -166,7 +166,7 @@ impl FractalViewerApp {
         })
     }
 
-    pub fn paint_fractal(&mut self, ui: &mut egui::Ui) {
+    pub fn paint_fractal(&mut self, ui: &mut Ui) {
         let size = ui.available_size();
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
 
@@ -203,53 +203,23 @@ impl FractalViewerApp {
         ui.painter()
             .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
     }
-}
 
-impl eframe::App for FractalViewerApp {
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut Frame) {
-        let fps = self.fps_samples.iter().sum::<f32>() / self.fps_samples.len() as f32;
-        if self.last_title_update.is_none()
-            || self
-                .last_title_update
-                .is_some_and(|i| i.elapsed() >= Duration::from_secs(1))
+    #[cfg(not(target_arch = "wasm32"))]
+    fn set_title(&self, ui: &mut Ui, title: String) {
+        ui.send_viewport_cmd(ViewportCommand::Title(title));
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn set_title(&self, ui: &mut Ui, title: String) {
+        if let Some(title_element) = web_sys::window()
+            .and_then(|window| window.document())
+            .and_then(|document| document.get_element_by_id("title"))
         {
-            let title = format!(
-                "{} {} [{} | {} | {:.0} FPS]",
-                env!("CARGO_PKG_NAME"),
-                env!("CARGO_PKG_VERSION"),
-                self.backend,
-                std::env::consts::ARCH,
-                fps
-            );
-
-            #[cfg(not(target_arch = "wasm32"))]
-            ui.send_viewport_cmd(ViewportCommand::Title(title));
-
-            #[cfg(target_arch = "wasm32")]
-            if let Some(title_element) = web_sys::window()
-                .and_then(|window| window.document())
-                .and_then(|document| document.get_element_by_id("title"))
-            {
-                title_element.set_inner_html(&title);
-            }
-
-            self.last_title_update = Some(Instant::now());
+            title_element.set_inner_html(&title);
         }
+    }
 
-        #[cfg(not(target_arch = "wasm32"))]
-        if ui.input(|i| i.key_pressed(Key::F11)) {
-            let current_fullscreen = ui.input(|i| i.viewport().fullscreen.unwrap());
-            ui.send_viewport_cmd(ViewportCommand::Fullscreen(!current_fullscreen));
-        }
-
-        if ui.input(|i| i.key_pressed(Key::F1)) {
-            self.show_ui = !self.show_ui;
-        }
-
-        egui::CentralPanel::default()
-            .frame(egui::Frame::default().inner_margin(0.0))
-            .show(ui, |ui| self.paint_fractal(ui));
-
+    fn window(&mut self, ui: &mut Ui) {
         egui::Window::new(env!("CARGO_PKG_NAME"))
             .title_bar(true)
             .open(&mut self.show_ui)
@@ -439,6 +409,45 @@ impl eframe::App for FractalViewerApp {
                     })
                 }
             });
+    }
+}
+
+impl eframe::App for FractalViewerApp {
+    fn ui(&mut self, ui: &mut Ui, _frame: &mut Frame) {
+        let fps = self.fps_samples.iter().sum::<f32>() / self.fps_samples.len() as f32;
+        let should_set_title = match self.last_title_update {
+            Some(instant) => instant.elapsed() >= Duration::from_secs(1),
+            None => true,
+        };
+        if should_set_title {
+            let title = format!(
+                "{} {} [{} | {} | {:.0} FPS]",
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION"),
+                self.backend,
+                std::env::consts::ARCH,
+                fps
+            );
+            self.set_title(ui, title);
+
+            self.last_title_update = Some(Instant::now());
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        if ui.input(|i| i.key_pressed(Key::F11)) {
+            let current_fullscreen = ui.input(|i| i.viewport().fullscreen.unwrap());
+            ui.send_viewport_cmd(ViewportCommand::Fullscreen(!current_fullscreen));
+        }
+
+        if ui.input(|i| i.key_pressed(Key::F1)) {
+            self.show_ui = !self.show_ui;
+        }
+
+        egui::CentralPanel::default()
+            .frame(egui::Frame::default().inner_margin(0.0))
+            .show(ui, |ui| self.paint_fractal(ui));
+
+        self.window(ui);
 
         // Validate custom expressions
         if self.recompile_shader {
