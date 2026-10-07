@@ -1,11 +1,11 @@
-pub(crate) mod v0_3 {
+pub(in crate::settings) mod v0_3 {
     use crate::settings::{CustomShaderData, InvalidSettingsImportError};
 
     use base64::engine::general_purpose;
     use base64::Engine;
 
     #[derive(Clone, serde::Serialize, serde::Deserialize)]
-    pub(crate) struct UserSettings {
+    pub(in crate::settings) struct UserSettings {
         zoom: f32,
         centre: [f32; 2],
         iterations: i32,
@@ -18,7 +18,7 @@ pub(crate) mod v0_3 {
     }
 
     impl UserSettings {
-        pub(crate) fn import_string(string: &str) -> Result<Self, InvalidSettingsImportError> {
+        pub(in crate::settings) fn import_base64(string: &str) -> Result<Self, InvalidSettingsImportError> {
             let bytes = general_purpose::STANDARD
                 .decode(string)
                 .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
@@ -48,14 +48,14 @@ pub(crate) mod v0_3 {
     }
 }
 
-pub(crate) mod v0_4 {
+pub(in crate::settings) mod v0_4 {
     use crate::settings::{CustomShaderData, InvalidSettingsImportError};
 
     use base64::engine::general_purpose;
     use base64::Engine;
 
     #[derive(Clone, serde::Serialize, serde::Deserialize)]
-    pub(crate) struct UserSettings {
+    pub(in crate::settings) struct UserSettings {
         zoom: f32,
         centre: [f32; 2],
         iterations: i32,
@@ -72,7 +72,7 @@ pub(crate) mod v0_4 {
     }
 
     impl UserSettings {
-        pub(crate) fn import_string(string: &str) -> Result<Self, InvalidSettingsImportError> {
+        pub(in crate::settings) fn import_base64(string: &str) -> Result<Self, InvalidSettingsImportError> {
             let bytes = general_purpose::STANDARD
                 .decode(string)
                 .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
@@ -105,14 +105,14 @@ pub(crate) mod v0_4 {
     }
 }
 
-pub(crate) mod v0_5 {
+pub(in crate::settings) mod v0_5 {
     use crate::settings::{CustomShaderData, InvalidSettingsImportError};
 
     use base64::engine::general_purpose;
     use base64::Engine;
 
     #[derive(Clone, serde::Serialize, serde::Deserialize)]
-    pub(crate) struct UserSettings {
+    pub(in crate::settings) struct UserSettings {
         zoom: f32,
         centre: [f32; 2],
         iterations: i32,
@@ -130,7 +130,7 @@ pub(crate) mod v0_5 {
     }
 
     impl UserSettings {
-        pub(crate) fn import_string(string: &str) -> Result<Self, InvalidSettingsImportError> {
+        pub(in crate::settings) fn import_base64(string: &str) -> Result<Self, InvalidSettingsImportError> {
             let bytes = general_purpose::STANDARD
                 .decode(string)
                 .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
@@ -164,14 +164,14 @@ pub(crate) mod v0_5 {
     }
 }
 
-pub(crate) mod v2_0 {
+pub(in crate::settings) mod v2_0 {
     use crate::settings::{CustomShaderData, InvalidSettingsImportError};
 
     use base64::engine::general_purpose;
     use base64::Engine;
 
     #[derive(Clone, serde::Serialize, serde::Deserialize)]
-    pub(crate) struct UserSettings {
+    pub(in crate::settings) struct UserSettings {
         zoom: f32,
         centre: [f32; 2],
         iterations: i32,
@@ -186,7 +186,7 @@ pub(crate) mod v2_0 {
     }
 
     impl UserSettings {
-        pub(crate) fn import_string(string: &str) -> Result<Self, InvalidSettingsImportError> {
+        pub(in crate::settings) fn import_base64(string: &str) -> Result<Self, InvalidSettingsImportError> {
             let bytes = general_purpose::STANDARD
                 .decode(string)
                 .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;

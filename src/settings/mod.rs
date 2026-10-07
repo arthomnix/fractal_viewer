@@ -84,6 +84,20 @@ impl UserSettings {
         )
     }
 
+    fn import_base64(base64: &str, legacy: bool) -> Result<Self, InvalidSettingsImportError> {
+        let bytes = general_purpose::STANDARD
+            .decode(base64)
+            .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
+        let result = if legacy {
+            bincode_next::serde::decode_from_slice::<Self, _>(bytes.as_slice(), bincode_next::config::legacy())
+        } else {
+            bincode_next::serde::decode_from_slice::<Self, _>(bytes.as_slice(), bincode_next::config::standard())
+        }
+            .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?
+            .0;
+        Ok(result)
+    }
+
     pub(crate) fn import_string(string: &str) -> Result<Self, InvalidSettingsImportError> {
         let string = match url::Url::parse(string) {
             Ok(url) => url.query().unwrap_or_default().to_string(),
@@ -106,19 +120,12 @@ impl UserSettings {
 
         let this_ver = get_major_minor_version();
         match major_minor_version {
-            s if s == &this_ver => {
-                let bytes = general_purpose::STANDARD
-                    .decode(base64)
-                    .map_err(|_| InvalidSettingsImportError::InvalidBase64)?;
-                let result = bincode_next::serde::decode_from_slice::<Self, _>(bytes.as_slice(), bincode_next::config::standard())
-                    .map_err(|_| InvalidSettingsImportError::DeserialisationFailed)?
-                    .0;
-                Ok(result)
-            }
-            "2.0" => Ok(compat::v2_0::UserSettings::import_string(base64)?.into()),
-            "0.5" => Ok(compat::v0_5::UserSettings::import_string(base64)?.into()),
-            "0.3" => Ok(compat::v0_3::UserSettings::import_string(base64)?.into()),
-            "0.4" => Ok(compat::v0_4::UserSettings::import_string(base64)?.into()),
+            s if s == &this_ver => Ok(UserSettings::import_base64(base64, false)?),
+            "2.1" => Ok(UserSettings::import_base64(base64, true)?),
+            "2.0" => Ok(compat::v2_0::UserSettings::import_base64(base64)?.into()),
+            "0.5" => Ok(compat::v0_5::UserSettings::import_base64(base64)?.into()),
+            "0.3" => Ok(compat::v0_3::UserSettings::import_base64(base64)?.into()),
+            "0.4" => Ok(compat::v0_4::UserSettings::import_base64(base64)?.into()),
             _ => Err(InvalidSettingsImportError::VersionMismatch),
         }
     }
