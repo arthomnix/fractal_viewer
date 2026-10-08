@@ -1,5 +1,6 @@
 mod settings;
 mod uniforms;
+mod presets;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
@@ -210,7 +211,7 @@ impl FractalViewerApp {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn set_title(&self, ui: &mut Ui, title: String) {
+    fn set_title(&self, _ui: &mut Ui, title: String) {
         if let Some(title_element) = web_sys::window()
             .and_then(|window| window.document())
             .and_then(|document| document.get_element_by_id("title"))
@@ -313,27 +314,14 @@ impl FractalViewerApp {
                 ui.collapsing("Equation", |ui| {
                     ui.label("Iterative function (WGSL expression)");
                     egui::ComboBox::from_label("Iterative function")
-                        .selected_text("Select default equation")
+                        .selected_text("Select preset")
                         .show_ui(ui, |ui| {
-                            if ui.selectable_value(
-                                &mut self.settings.shader_data.equation,
-                                "csquare(z) + c".to_string(),
-                                "Mandelbrot set",
-                            ).clicked() || ui.selectable_value(
-                                &mut self.settings.shader_data.equation,
-                                "csquare(abs(z)) + c".to_string(),
-                                "Burning ship fractal",
-                            ).clicked() || ui.selectable_value(
-                                &mut self.settings.shader_data.equation,
-                                "cdiv(cmul(csquare(z), z), vec2<f32>(1.0, 0.0) + z * z) + c"
-                                    .to_string(),
-                                "Feather fractal",
-                            ).clicked() || ui.selectable_value(
-                                &mut self.settings.shader_data.equation,
-                                "csquare(vec2<f32>(z.x, -z.y)) + c".to_string(),
-                                "Tricorn fractal",
-                            ).clicked() {
-                                self.recompile_shader = true;
+                            for (name, expr) in presets::FRACTAL_PRESETS {
+                                self.recompile_shader |= ui.selectable_value(
+                                    &mut self.settings.shader_data.equation,
+                                    expr.to_string(),
+                                    name,
+                                ).clicked();
                             }
                         });
                     ui.label("...Or edit it yourself!");
