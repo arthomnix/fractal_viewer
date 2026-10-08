@@ -1,7 +1,7 @@
 [package]
 name = "fractal_viewer"
 version = "2.2.1"
-edition = "2021"
+edition = "2024"
 description = "Cross-platform GPU-accelerated viewer for the Mandelbrot set and related fractals"
 repository = "https://github.com/arthomnix/fractal_viewer"
 license = "MIT"
