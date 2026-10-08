@@ -173,28 +173,30 @@ impl FractalViewerApp {
 
     /// Draw the fractal itself using egui_wgpu.
     pub fn paint_fractal(&mut self, ui: &mut Ui) {
-        let size = ui.available_size();
-        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
+        let pixels_per_point = ui.native_pixels_per_point().unwrap_or(1.0);
+        let point_size = ui.content_rect().size();
+        let pixel_size = point_size * pixels_per_point;
+        let (rect, response) = ui.allocate_exact_size(point_size, egui::Sense::click_and_drag());
 
-        let scale = calculate_scale(size, &self.settings);
+        let scale = calculate_scale(pixel_size, &self.settings);
         if response.dragged_by(PointerButton::Primary) {
             let drag_motion = response.drag_delta();
-            self.settings.centre[0] -= drag_motion.x * scale;
-            self.settings.centre[1] -= drag_motion.y * scale;
+            self.settings.centre[0] -= drag_motion.x * scale * pixels_per_point;
+            self.settings.centre[1] -= drag_motion.y * scale * pixels_per_point;
         } else if response.clicked_by(PointerButton::Secondary)
             || response.dragged_by(PointerButton::Secondary)
         {
             let pointer_pos = response.interact_pointer_pos().unwrap();
             self.settings.initial_value[0] =
-                (pointer_pos.x - size.x / 2.0) * scale + self.settings.centre[0];
+                (pointer_pos.x - point_size.x / 2.0) * scale * pixels_per_point + self.settings.centre[0];
             self.settings.initial_value[1] =
-                (pointer_pos.y - size.y / 2.0) * scale + self.settings.centre[1];
+                (pointer_pos.y - point_size.y / 2.0) * scale * pixels_per_point + self.settings.centre[1];
         }
 
         let scroll = ui.input(|i| i.smooth_scroll_delta);
         self.settings.zoom += self.settings.zoom * (scroll.y / 300.0).max(-0.9);
 
-        let uniforms = Uniforms::new(size, &self.settings);
+        let uniforms = Uniforms::new(pixel_size, &self.settings);
 
         let callback = FvRenderCallback {
             uniforms,
