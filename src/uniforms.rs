@@ -5,14 +5,22 @@ pub(crate) fn calculate_scale(size: Vec2, settings: &UserSettings) -> f32 {
     4.0 / settings.zoom / size.min_elem()
 }
 
+/// Uniforms for the fractal shader. This is laid out identically to the equivalent
+/// struct in `shader.wgsl`.
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct Uniforms {
+    /// Scale factor from pixels to complex coordinates.
     scale: f32,
+    /// Escape threshold (how big the iteration must get before it is considered to be divergent).
     escape_threshold: f32,
+    /// Centre of the image.
     centre: [f32; 2],
+    /// Maximum number of iterations before giving up and assuming the iteration is not divergent.
     iterations: i32,
+    /// Various packed boolean flags.
     flags: u32,
+    /// The initial value of the iteration, or the fixed value of `c` in Julia set mode. 
     initial_value: [f32; 2],
 }
 

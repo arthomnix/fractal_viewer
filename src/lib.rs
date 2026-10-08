@@ -32,6 +32,9 @@ use wgpu::{
 
 static SHADER: &str = include_str!("shader.wgsl");
 
+/// Validate the shader including the user's custom inputs.
+/// If the shader is invalid, attempting to use it will result in a crash, so we
+/// need to validate first.
 fn validate_shader(options: &CustomShaderData) -> Result<(), String> {
     let shader_src = options.shader();
 
@@ -67,6 +70,7 @@ impl FractalViewerApp {
         #[cfg(not(target_arch = "wasm32"))]
         let import_error = None;
 
+        // import from URL query string on web
         #[cfg(target_arch = "wasm32")]
         let (mut settings, mut import_error) = match web_sys::window()
             .and_then(|w| match w.location().href().ok() {
@@ -167,6 +171,7 @@ impl FractalViewerApp {
         })
     }
 
+    /// Draw the fractal itself using egui_wgpu.
     pub fn paint_fractal(&mut self, ui: &mut Ui) {
         let size = ui.available_size();
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
@@ -205,11 +210,13 @@ impl FractalViewerApp {
             .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
     }
 
+    /// Set the window title (on desktop).
     #[cfg(not(target_arch = "wasm32"))]
     fn set_title(&self, ui: &mut Ui, title: String) {
         ui.send_viewport_cmd(ViewportCommand::Title(title));
     }
 
+    /// Set the page title (on web).
     #[cfg(target_arch = "wasm32")]
     fn set_title(&self, _ui: &mut Ui, title: String) {
         if let Some(title_element) = web_sys::window()
@@ -220,6 +227,7 @@ impl FractalViewerApp {
         }
     }
 
+    /// Draw the user interface for the settings window.
     fn window(&mut self, ui: &mut Ui) {
         egui::Window::new(env!("CARGO_PKG_NAME"))
             .title_bar(true)
@@ -465,6 +473,10 @@ struct RendererState {
 }
 
 impl RendererState {
+    /// Create a render pipeline with the given shader options.
+    ///
+    /// This is done at program start, but also whenever the user changes options such as the equation or colour function
+    /// (as these change the shader and thus require it to be recompiled).
     fn generate_pipeline(&self, device: &Device, shader_data: &CustomShaderData) -> RenderPipeline {
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("fv_shader"),
@@ -501,12 +513,16 @@ impl RendererState {
     }
 }
 
+/// Overall renderer struct, containing the render pipeline and other associated state.
 struct FvRenderer {
     pipeline: RenderPipeline,
     state: RendererState,
 }
 
 impl FvRenderer {
+    /// Prepare the renderer for rendering a frame:
+    /// * Rebuild the render pipeline if necessary
+    /// * Write the uniforms to the uniform buffer
     fn prepare(&mut self, device: &Device, queue: &Queue, callback: &FvRenderCallback) {
         if let Some(data) = &callback.shader_recompilation_options {
             self.pipeline = self.state.generate_pipeline(device, data);
@@ -519,6 +535,7 @@ impl FvRenderer {
         );
     }
 
+    /// Render the fractal.
     fn paint(&self, render_pass: &mut RenderPass<'static>) {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.state.bind_group, &[]);
@@ -526,6 +543,10 @@ impl FvRenderer {
     }
 }
 
+/// The [egui_wgpu] render callback type for interfacing our WGPU renderer with egui.
+///
+/// Implements the callbacks defined in [egui_wgpu::CallbackTrait].
+/// Assumes that the egui_wgpu renderer's callback resources is set to an [FvRenderer] instance.
 struct FvRenderCallback {
     uniforms: Uniforms,
     shader_recompilation_options: Option<CustomShaderData>,

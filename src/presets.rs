@@ -1,3 +1,4 @@
+/// List of preset fractals which can be selected in the UI.
 pub(crate) const FRACTAL_PRESETS: [(&str, &str); 4] = [
     ("Mandelbrot set", "csquare(z) + c"),
     ("Burning ship fractal", "csquare(abs(z)) + c"),
