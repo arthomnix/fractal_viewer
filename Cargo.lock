@@ -1268,7 +1268,7 @@ dependencies = [
 
 [[package]]
 name = "fractal_viewer"
-version = "2.2.1"
+version = "2.2.2"
 dependencies = [
  "arboard",
  "base64",
