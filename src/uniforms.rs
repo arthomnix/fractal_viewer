@@ -20,7 +20,7 @@ pub(crate) struct Uniforms {
     iterations: i32,
     /// Various packed boolean flags.
     flags: u32,
-    /// The initial value of the iteration, or the fixed value of `c` in Julia set mode. 
+    /// The initial value of the iteration, or the fixed value of `c` in Julia set mode.
     initial_value: [f32; 2],
 }
 
