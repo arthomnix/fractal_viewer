@@ -148,7 +148,7 @@ impl FractalViewerApp {
             Backend::Noop => "Empty",
             Backend::Vulkan => "Vulkan",
             Backend::Metal => "Metal",
-            Backend::Dx12 => "Direui 12",
+            Backend::Dx12 => "DirectX 12",
             Backend::Gl => "WebGL/OpenGL",
             Backend::BrowserWebGpu => "WebGPU",
         };
